@@ -1,0 +1,5 @@
+{
+  "name": "Sonic Explorer",
+  "description": "Discover strange and eclectic music mixes from around the world using Gemini AI and create playlists on YouTube Music.",
+  "requestFramePermissions": []
+}
