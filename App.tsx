@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MixCard } from './components/MixCard';
 import { PlayerBar } from './components/PlayerBar';
 import { WorldMap } from './components/WorldMap';
 import { SettingsModal } from './components/SettingsModal';
 import { generateStrangeMixes } from './services/gemini';
-import { createPlaylist, searchVideo, addVideoToPlaylist } from './services/youtube';
-import { MusicMix, GoogleAuthResponse, SearchCriteria } from './types';
+import { searchVideoWithKey, getGoogleAccessToken, createYouTubePlaylist, addVideoToPlaylist } from './services/youtube';
+import { MusicMix, SearchCriteria } from './types';
 
-// Lista de estilos sugeridos para el datalist
 const SUGGESTED_STYLES = [
   "Rock", "Jazz", "Hip Hop", "Electrónica", "Folk", "Metal", "Reggae", 
   "Pop", "Clásica", "Punk", "Blues", "Funk", "Soul", "Disco", "House", 
@@ -18,160 +17,116 @@ const SUGGESTED_STYLES = [
   "Trap", "Drum and Bass", "Dubstep", "Grime", "R&B"
 ].sort();
 
-// Datos de demostración
 const DEMO_MIXES: MusicMix[] = [
-  { id: '1', style: 'Rap', country: 'Irán', continent: 'Asia', artist: 'Hichkas', year: '2000s', bpm: 90, description: 'El padre del rap persa, mezclando ritmos tradicionales con flujos callejeros de Teherán.', searchQuery: 'Hichkas Persian Rap', coordinates: { lat: 32.4279, lng: 53.6880 } },
-  { id: '2', style: 'Rock Progresivo', country: 'Vaticano', continent: 'Europa', artist: 'Metempsychosis', year: '2010s', bpm: 120, description: 'Bandas de rock formadas por seminaristas dentro de los muros del Vaticano.', searchQuery: 'Metempsychosis Vatican Rock', coordinates: { lat: 41.9029, lng: 12.4534 } },
-  { id: '3', style: 'Reggae', country: 'Polonia', continent: 'Europa', artist: 'Habakuk', year: '1990s', bpm: 75, description: 'Una visión distintiva polaca del roots reggae mezclado con sensibilidades folk eslavas.', searchQuery: 'Habakuk Polish Reggae', coordinates: { lat: 51.9194, lng: 19.1451 } },
-  { id: '4', style: 'Death Metal', country: 'Botsuana', continent: 'África', artist: 'Overthrust', year: '2010s', bpm: 180, description: 'Death metal de la vieja escuela de la subcultura de metaleros vaqueros de Botsuana.', searchQuery: 'Overthrust Botswana Metal', coordinates: { lat: -22.3285, lng: 24.6849 } },
-  { id: '5', style: 'Hip Hop', country: 'Mongolia', continent: 'Asia', artist: 'Ginex', year: '2000s', bpm: 95, description: 'Rap con flujo agresivo en mongol sobre ritmos trap pesados.', searchQuery: 'Ginex Mongolian Hip Hop', coordinates: { lat: 46.8625, lng: 103.8467 } },
+  { id: '1', style: 'Rap Persa', country: 'Irán', continent: 'Asia', artist: 'Hichkas', year: '2000s', bpm: 90, description: 'El padre del rap persa, mezclando ritmos tradicionales con flujos callejeros de Teherán.', searchQuery: 'Hichkas Persian Rap', coordinates: { lat: 32.4279, lng: 53.6880 } },
+  { id: '2', style: 'Rock Progresivo', country: 'Italia', continent: 'Europa', artist: 'Premiata Forneria Marconi', year: '1970s', bpm: 120, description: 'Prog rock italiano que fusiona la música clásica con el rock sinfónico más ambicioso.', searchQuery: 'Premiata Forneria Marconi Celebration', coordinates: { lat: 41.9029, lng: 12.4534 } },
+  { id: '3', style: 'Reggae Eslavo', country: 'Polonia', continent: 'Europa', artist: 'Habakuk', year: '1990s', bpm: 75, description: 'Una visión polaca del roots reggae mezclado con sensibilidades folk eslavas.', searchQuery: 'Habakuk Polish Reggae', coordinates: { lat: 51.9194, lng: 19.1451 } },
+  { id: '4', style: 'Death Metal', country: 'Botsuana', continent: 'África', artist: 'Overthrust', year: '2010s', bpm: 180, description: 'Death metal de la vieja escuela desde la subcultura metalera de Botsuana.', searchQuery: 'Overthrust Botswana Metal', coordinates: { lat: -22.3285, lng: 24.6849 } },
+  { id: '5', style: 'Hip Hop Mongol', country: 'Mongolia', continent: 'Asia', artist: 'Gee', year: '2000s', bpm: 95, description: 'Rap con flujo agresivo en mongol sobre ritmos trap con toques de canto gutural.', searchQuery: 'Gee Mongolian Hip Hop', coordinates: { lat: 46.8625, lng: 103.8467 } },
+  { id: '6', style: 'Cumbia Psicodélica', country: 'Perú', continent: 'América del Sur', artist: 'Los Destellos', year: '1970s', bpm: 110, description: 'Cumbia peruana con guitarras eléctricas surf y efectos psicodélicos amazónicos.', searchQuery: 'Los Destellos cumbia psicodelica', coordinates: { lat: -12.0464, lng: -77.0428 } },
 ];
 
 export default function App() {
   const [mixes, setMixes] = useState<MusicMix[]>(DEMO_MIXES);
   const [loading, setLoading] = useState(false);
   
-  // Player State
+  // Player state
   const [currentMixIndex, setCurrentMixIndex] = useState<number>(-1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
   
-  // API Key State
-  // Use localStorage to persist keys, defaulting Gemini to env but Maps to empty (to avoid InvalidKeyMapError)
-  const [geminiKey, setGeminiKey] = useState<string>(() => {
-    return localStorage.getItem('gemini_key') || process.env.API_KEY || "";
-  });
-  const [mapsApiKey, setMapsApiKey] = useState<string>(() => {
-    return localStorage.getItem('maps_key') || "";
-  });
+  // API Keys — env vars as defaults, localStorage as override
+  const [geminiKey, setGeminiKey] = useState<string>(() => 
+    localStorage.getItem('gemini_key') || process.env.GEMINI_API_KEY || ""
+  );
+  const [googleKey, setGoogleKey] = useState<string>(() => 
+    localStorage.getItem('google_key') || process.env.GOOGLE_API_KEY || ""
+  );
+  const [googleClientId, setGoogleClientId] = useState<string>(() => 
+    localStorage.getItem('google_client_id') || process.env.GOOGLE_CLIENT_ID || ""
+  );
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
+  const [isSavingPlaylist, setIsSavingPlaylist] = useState(false);
 
-  // Persist keys when they change
-  useEffect(() => {
-    if (geminiKey) localStorage.setItem('gemini_key', geminiKey);
-  }, [geminiKey]);
+  // Persist keys
+  useEffect(() => { if (geminiKey) localStorage.setItem('gemini_key', geminiKey); }, [geminiKey]);
+  useEffect(() => { if (googleKey) localStorage.setItem('google_key', googleKey); }, [googleKey]);
+  useEffect(() => { if (googleClientId) localStorage.setItem('google_client_id', googleClientId); }, [googleClientId]);
 
-  useEffect(() => {
-    if (mapsApiKey) localStorage.setItem('maps_key', mapsApiKey);
-  }, [mapsApiKey]);
-
-  // Filtros
+  // Filters
   const [criteria, setCriteria] = useState<SearchCriteria>({
-    continent: '',
-    country: '',
-    style: '',
-    year: '',
-    bpm: ''
+    continent: '', country: '', style: '', year: '', bpm: ''
   });
-  
-  // Estado Auth YouTube
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [tokenClient, setTokenClient] = useState<any>(null);
-  const [playlistId, setPlaylistId] = useState<string | null>(null);
-  const [processingQueue, setProcessingQueue] = useState<Set<string>>(new Set());
-  const [statusMsg, setStatusMsg] = useState<string>('');
 
+  // --- Player ---
+
+  // Search video when current track changes
   useEffect(() => {
-    if (window.google) {
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: 'YOUR_CLIENT_ID_HERE', // Reemplazar con variable de entorno en prod
-        scope: 'https://www.googleapis.com/auth/youtube',
-        callback: (tokenResponse: GoogleAuthResponse) => {
-          if (tokenResponse && tokenResponse.access_token) {
-            setAccessToken(tokenResponse.access_token);
-            setStatusMsg("¡Conectado a YouTube!");
-          }
-        },
-      });
-      setTokenClient(client);
+    if (currentMixIndex === -1) return;
+    
+    const mix = mixes[currentMixIndex];
+    if (!mix) return;
+
+    if (mix.videoId) {
+      setIsPlaying(true);
+      setStatusMsg(`${mix.artist} — ${mix.style}`);
+      return;
     }
-  }, []);
 
-  const handleAuth = () => {
-    if (tokenClient) {
-      try {
-        tokenClient.requestAccessToken();
-      } catch (e) {
-        alert("Google Identity Client ID no configurado. Por favor, revisa el código.");
-      }
-    } else {
-      alert("El script de Google Identity Services no ha cargado.");
+    if (!googleKey) {
+      setStatusMsg("Configura tu clave de Google en Ajustes para reproducir.");
+      setIsSettingsOpen(true);
+      setIsPlaying(false);
+      return;
     }
-  };
 
-  // --- Logic for Player ---
-  
-  // Resolve Video ID just in time
-  useEffect(() => {
-    const resolveVideoId = async () => {
-      if (currentMixIndex === -1) return;
-      
-      const mix = mixes[currentMixIndex];
-      
-      // If we already have the ID, just ensure playing
-      if (mix.videoId) {
-        if (!isPlaying) setIsPlaying(true);
-        return;
+    setStatusMsg(`Buscando: ${mix.artist}...`);
+    searchVideoWithKey(mix.searchQuery, googleKey).then(foundId => {
+      if (foundId) {
+        setMixes(prev => prev.map((m, i) => i === currentMixIndex ? { ...m, videoId: foundId } : m));
+        setStatusMsg(`${mix.artist} — ${mix.style}`);
+        setIsPlaying(true);
+      } else {
+        setStatusMsg(`No se encontró video para ${mix.artist}`);
+        handleNext();
       }
-
-      // We need to fetch it
-      if (!accessToken) {
-        setStatusMsg("Se requiere conexión a YouTube para reproducir.");
-        // Try to ask for auth if user clicked play
-        handleAuth();
-        setIsPlaying(false);
-        return;
-      }
-
-      setStatusMsg(`Buscando video para ${mix.artist}...`);
-      try {
-        const foundId = await searchVideo(mix.searchQuery, accessToken);
-        if (foundId) {
-          // Update the specific mix with the found ID so we don't search again
-          setMixes(prev => prev.map((m, i) => i === currentMixIndex ? { ...m, videoId: foundId } : m));
-          setStatusMsg(`Reproduciendo: ${mix.artist}`);
-          setIsPlaying(true);
-        } else {
-          setStatusMsg(`No se encontró video para ${mix.artist}, saltando...`);
-          handleNext();
-        }
-      } catch (e) {
-        console.error("Error finding video", e);
-        setStatusMsg("Error buscando video.");
-        setIsPlaying(false);
-      }
-    };
-
-    resolveVideoId();
-  }, [currentMixIndex, accessToken]); // Depend on index change
+    }).catch(() => {
+      setStatusMsg("Error buscando video. Verifica tu clave API.");
+      setIsPlaying(false);
+    });
+  }, [currentMixIndex, googleKey]);
 
   const handlePlayCard = (mix: MusicMix) => {
     const index = mixes.findIndex(m => m.id === mix.id);
     if (index === currentMixIndex) {
-      // Toggle
       setIsPlaying(!isPlaying);
     } else {
-      // New Song
       setCurrentMixIndex(index);
-      setIsPlaying(true); // Will trigger effect to load video
     }
   };
 
-  const handleNext = () => {
-    if (currentMixIndex < mixes.length - 1) {
-      setCurrentMixIndex(prev => prev + 1);
-    } else {
-      // Loop or stop? Stop for now.
+  const handleNext = useCallback(() => {
+    setCurrentMixIndex(prev => {
+      if (shuffle) {
+        if (mixes.length <= 1) return prev;
+        let next = prev;
+        while (next === prev) {
+          next = Math.floor(Math.random() * mixes.length);
+        }
+        return next;
+      }
+      if (prev < mixes.length - 1) return prev + 1;
       setIsPlaying(false);
-      setCurrentMixIndex(-1);
-    }
-  };
+      setStatusMsg('');
+      return -1;
+    });
+  }, [mixes.length, shuffle]);
 
-  const handlePrev = () => {
-    if (currentMixIndex > 0) {
-      setCurrentMixIndex(prev => prev - 1);
-    }
-  };
+  const handlePrev = useCallback(() => {
+    setCurrentMixIndex(prev => (prev > 0 ? prev - 1 : prev));
+  }, []);
   
   const handlePlayAll = () => {
     if (mixes.length > 0) {
@@ -182,304 +137,316 @@ export default function App() {
 
   const handleMapSelect = (mix: MusicMix) => {
     handlePlayCard(mix);
-    // Optional: Scroll to card logic could go here
   };
 
-  // ------------------------
+  // --- YouTube Playlist ---
+
+  const handleSavePlaylist = async () => {
+    if (!googleClientId) {
+      setStatusMsg("Configura tu Google Client ID en Ajustes para crear playlists.");
+      setIsSettingsOpen(true);
+      return;
+    }
+
+    if (mixes.length === 0) {
+      setStatusMsg("No hay mixes para guardar.");
+      return;
+    }
+
+    setIsSavingPlaylist(true);
+
+    try {
+      // 1. Authenticate with Google
+      setStatusMsg("Autenticando con Google...");
+      const accessToken = await getGoogleAccessToken(googleClientId);
+      
+      // 2. Search for videos that don't have IDs yet
+      const updatedMixes = [...mixes];
+      if (googleKey) {
+        for (let i = 0; i < updatedMixes.length; i++) {
+          if (!updatedMixes[i].videoId) {
+            setStatusMsg(`Buscando videos... (${i + 1}/${updatedMixes.length})`);
+            const foundId = await searchVideoWithKey(updatedMixes[i].searchQuery, googleKey);
+            if (foundId) {
+              updatedMixes[i] = { ...updatedMixes[i], videoId: foundId };
+            }
+            await new Promise(r => setTimeout(r, 150));
+          }
+        }
+        setMixes(updatedMixes);
+      }
+      
+      // 3. Filter mixes with video IDs
+      const mixesWithVideo = updatedMixes.filter(m => m.videoId);
+      
+      if (mixesWithVideo.length === 0) {
+        setStatusMsg("No se encontraron videos para la playlist.");
+        return;
+      }
+      
+      // 4. Create playlist
+      setStatusMsg("Creando playlist en YouTube...");
+      const title = `Atlas Sónico — ${new Date().toLocaleDateString('es-ES')}`;
+      const desc = `Playlist generada por Atlas Sónico con ${mixesWithVideo.length} descubrimientos musicales del mundo.`;
+      const playlistId = await createYouTubePlaylist(accessToken, title, desc);
+      
+      // 5. Add videos to playlist
+      let addedCount = 0;
+      for (let i = 0; i < mixesWithVideo.length; i++) {
+        setStatusMsg(`Añadiendo a playlist... (${i + 1}/${mixesWithVideo.length})`);
+        const ok = await addVideoToPlaylist(accessToken, playlistId, mixesWithVideo[i].videoId!);
+        if (ok) addedCount++;
+        await new Promise(r => setTimeout(r, 200));
+      }
+      
+      setStatusMsg(`Playlist creada con ${addedCount} videos`);
+      window.open(`https://www.youtube.com/playlist?list=${playlistId}`, '_blank');
+      
+    } catch (error: any) {
+      console.error("Error creating playlist:", error);
+      setStatusMsg(`Error: ${error.message || "No se pudo crear la playlist."}`);
+    } finally {
+      setIsSavingPlaylist(false);
+    }
+  };
+
+  // --- AI Generation ---
 
   const handleGenerate = async () => {
-    const keyToUse = geminiKey || process.env.API_KEY;
+    const keyToUse = geminiKey || process.env.GEMINI_API_KEY;
     if (!keyToUse) {
-      setStatusMsg("API Key faltante. Abre configuración.");
+      setStatusMsg("Falta la clave de Gemini.");
       setIsSettingsOpen(true);
       return;
     }
 
     setLoading(true);
-    setCurrentMixIndex(-1); // Reset player
+    setCurrentMixIndex(-1);
     setIsPlaying(false);
-    setStatusMsg("Consultando al oráculo sónico por sonidos extraños...");
+    setStatusMsg("Generando descubrimientos musicales con IA...");
     
     try {
       const newMixes = await generateStrangeMixes(keyToUse, criteria);
       setMixes(newMixes);
-      setStatusMsg(`Se encontraron ${newMixes.length} mezclas raras.`);
+      setStatusMsg(`${newMixes.length} descubrimientos generados`);
     } catch (error) {
       console.error(error);
-      setStatusMsg("Error generando mezclas. Verifica tu clave API.");
+      setStatusMsg("Error generando mezclas. Verifica tu clave de Gemini.");
       setIsSettingsOpen(true);
     } finally {
       setLoading(false);
     }
   };
 
-  const createMasterPlaylist = async () => {
-    if (!accessToken) return;
-    setStatusMsg("Creando playlist 'Mezclas Globales Extrañas'...");
-    try {
-      const id = await createPlaylist(
-        `Mezclas Extrañas - ${new Date().toLocaleDateString()}`,
-        "Una colección de música global extraña y maravillosa generada por IA.",
-        accessToken
-      );
-      setPlaylistId(id);
-      setStatusMsg("¡Playlist creada! Lista para agregar canciones.");
-      return id;
-    } catch (e) {
-      setStatusMsg("Error al crear playlist.");
-      console.error(e);
-      return null;
-    }
-  };
-
-  const addToPlaylist = async (mix: MusicMix) => {
-    if (!accessToken) {
-      handleAuth();
-      return;
-    }
-
-    setProcessingQueue(prev => new Set(prev).add(mix.id));
-    
-    try {
-      let currentPlaylistId = playlistId;
-      if (!currentPlaylistId) {
-        currentPlaylistId = await createMasterPlaylist();
-      }
-
-      if (currentPlaylistId) {
-        // Reuse videoId if we already found it during playback
-        let videoId = mix.videoId;
-        
-        if (!videoId) {
-           videoId = await searchVideo(mix.searchQuery, accessToken) || undefined;
-           // Cache it
-           if (videoId) {
-              setMixes(prev => prev.map(m => m.id === mix.id ? { ...m, videoId } : m));
-           }
-        }
-
-        if (videoId) {
-          await addVideoToPlaylist(currentPlaylistId, videoId, accessToken);
-          setStatusMsg(`Añadido ${mix.artist} a la playlist.`);
-        } else {
-          setStatusMsg(`No se encontró video para ${mix.artist}.`);
-        }
-      }
-    } catch (error) {
-      console.error(error);
-      setStatusMsg("Error al añadir a la playlist.");
-    } finally {
-      setProcessingQueue(prev => {
-        const next = new Set(prev);
-        next.delete(mix.id);
-        return next;
-      });
-    }
-  };
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setCriteria({
-      ...criteria,
-      [e.target.name]: e.target.value
-    });
+    setCriteria({ ...criteria, [e.target.name]: e.target.value });
   };
+
+  const currentMix = currentMixIndex >= 0 ? mixes[currentMixIndex] : null;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6 md:p-12 pb-32 font-sans">
-      <header className="max-w-7xl mx-auto mb-10 flex flex-col md:flex-row justify-between items-end gap-6 border-b border-zinc-800 pb-8">
-        <div>
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-2 text-white">
-            Explorador <span className="text-indigo-500">Sónico</span>
-          </h1>
-          <p className="text-zinc-400 text-lg max-w-xl">
-            Descubre cruces musicales raros. Desde Rap Iraní hasta Rock del Vaticano.
-          </p>
-        </div>
-        
-        <div className="flex flex-col items-end gap-3 w-full md:w-auto">
-           <div className="text-xs text-zinc-500 font-mono mb-1 h-4">
-             {statusMsg}
-           </div>
-           
-           <div className="flex gap-3">
-            <button
-               onClick={() => setIsSettingsOpen(true)}
-               className="p-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all border border-zinc-700"
-               title="Configuración"
-            >
-               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            </button>
-
-            {!accessToken ? (
-               <button 
-                 onClick={handleAuth}
-                 className="px-5 py-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-white font-semibold transition-all border border-zinc-700 text-sm"
-               >
-                 Conectar YouTube
-               </button>
-            ) : (
-              <div className="px-5 py-2 rounded-full bg-green-900/30 text-green-400 font-mono text-sm border border-green-900 flex items-center">
-                <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                YouTube Conectado
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans">
+      
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-800/50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-white leading-tight">
+                Atlas <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">Sónico</span>
+              </h1>
+              <p className="text-zinc-500 text-xs">Descubre música rara del mundo con IA</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {statusMsg && (
+              <div className="text-xs text-zinc-400 font-mono max-w-[250px] truncate hidden md:block">
+                {statusMsg}
               </div>
             )}
-           </div>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 rounded-lg bg-zinc-800/60 hover:bg-zinc-700/60 text-zinc-400 hover:text-white transition-all border border-zinc-700/50"
+              title="Configuración"
+              aria-label="Abrir configuración"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Barra de Búsqueda y Filtros */}
-      <section className="max-w-7xl mx-auto mb-12 bg-zinc-900/50 p-6 rounded-xl border border-zinc-800">
-        <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-4">Configurar Búsqueda de IA</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <main className="max-w-7xl mx-auto px-6 py-6" style={{ paddingBottom: currentMix ? 240 : 40 }}>
+        
+        {/* Filters */}
+        <section className="mb-8 bg-zinc-900/40 p-5 rounded-2xl border border-zinc-800/40">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Explorar sonidos</h2>
+            <span className="text-[10px] text-zinc-600 font-mono">{mixes.length} resultados</span>
+          </div>
           
-          <select 
-            name="continent"
-            value={criteria.continent}
-            onChange={handleInputChange}
-            className="bg-zinc-950 border border-zinc-700 text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
-          >
-            <option value="">Cualquier Continente</option>
-            <option value="Africa">África</option>
-            <option value="Asia">Asia</option>
-            <option value="Europe">Europa</option>
-            <option value="North America">América del Norte</option>
-            <option value="South America">América del Sur</option>
-            <option value="Oceania">Oceanía</option>
-          </select>
-
-          <input 
-            type="text" 
-            name="country" 
-            placeholder="País (ej. Japón)" 
-            value={criteria.country}
-            onChange={handleInputChange}
-            className="bg-zinc-950 border border-zinc-700 text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
-          />
-
-          {/* Input con Datalist para Estilos */}
-          <div className="relative">
-            <input 
-              type="text" 
-              name="style" 
-              list="style-suggestions"
-              placeholder="Estilo (ej. Jazz o elige)" 
-              value={criteria.style}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <select 
+              name="continent"
+              value={criteria.continent}
               onChange={handleInputChange}
-              className="bg-zinc-950 border border-zinc-700 text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
+              aria-label="Seleccionar continente"
+              className="bg-zinc-950 border border-zinc-800/60 text-white text-sm rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
+            >
+              <option value="">Cualquier continente</option>
+              <option value="Africa">África</option>
+              <option value="Asia">Asia</option>
+              <option value="Europe">Europa</option>
+              <option value="North America">América del Norte</option>
+              <option value="South America">América del Sur</option>
+              <option value="Oceania">Oceanía</option>
+            </select>
+
+            <input type="text" name="country" placeholder="País..." value={criteria.country}
+              onChange={handleInputChange}
+              className="bg-zinc-950 border border-zinc-800/60 text-white text-sm rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
             />
-            <datalist id="style-suggestions">
-              {SUGGESTED_STYLES.map(style => (
-                <option key={style} value={style} />
-              ))}
-            </datalist>
+
+            <div>
+              <input type="text" name="style" list="style-suggestions" placeholder="Estilo..." 
+                value={criteria.style} onChange={handleInputChange}
+                className="bg-zinc-950 border border-zinc-800/60 text-white text-sm rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
+              />
+              <datalist id="style-suggestions">
+                {SUGGESTED_STYLES.map(style => <option key={style} value={style} />)}
+              </datalist>
+            </div>
+
+            <input type="text" name="year" placeholder="Década..." value={criteria.year}
+              onChange={handleInputChange}
+              className="bg-zinc-950 border border-zinc-800/60 text-white text-sm rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
+            />
+
+            <input type="number" name="bpm" placeholder="BPM..." value={criteria.bpm}
+              onChange={handleInputChange}
+              className="bg-zinc-950 border border-zinc-800/60 text-white text-sm rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
+            />
           </div>
 
-           <input 
-            type="text" 
-            name="year" 
-            placeholder="Año/Década" 
-            value={criteria.year}
-            onChange={handleInputChange}
-            className="bg-zinc-950 border border-zinc-700 text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
-          />
+          <div className="mt-4 flex flex-col sm:flex-row justify-end gap-2">
+            {mixes.length > 0 && (
+              <>
+                <button onClick={handleSavePlaylist} disabled={isSavingPlaylist}
+                  className="px-5 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-semibold transition-all flex items-center justify-center gap-2 text-sm border border-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSavingPlaylist ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10M19 11v6M16 14h6" />
+                      </svg>
+                      Guardar playlist en YouTube
+                    </>
+                  )}
+                </button>
 
-          <input 
-            type="number" 
-            name="bpm" 
-            placeholder="BPM Aprox." 
-            value={criteria.bpm}
-            onChange={handleInputChange}
-            className="bg-zinc-950 border border-zinc-700 text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
-          />
+                <button onClick={handlePlayAll}
+                  className="px-5 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-semibold transition-all flex items-center justify-center gap-2 text-sm border border-zinc-700/50"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  Reproducir todo
+                </button>
+              </>
+            )}
 
-        </div>
-        <div className="mt-4 flex justify-end gap-3">
-          {mixes.length > 0 && (
-             <button
-               onClick={handlePlayAll}
-               className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20"
-             >
-               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-               Reproducir Todo
-             </button>
-          )}
-
-          <button 
-              onClick={handleGenerate}
-              disabled={loading}
-              className="px-8 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20 w-full md:w-auto justify-center"
+            <button onClick={handleGenerate} disabled={loading}
+              className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold transition-all flex items-center justify-center gap-2 text-sm shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  <span>Buscando...</span>
+                  Generando...
                 </>
               ) : (
                 <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span>Generar Mezclas</span>
+                  Generar con IA
                 </>
               )}
             </button>
-        </div>
-      </section>
+          </div>
+        </section>
 
-      <main className="max-w-7xl mx-auto">
-        
-        {/* Mapa Mundial */}
+        {/* Map */}
         <WorldMap 
           mixes={mixes} 
           onSelect={handleMapSelect} 
-          selectedId={mixes[currentMixIndex]?.id}
-          apiKey={mapsApiKey}
+          selectedId={currentMix?.id}
+          apiKey={googleKey}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Cards grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {mixes.map((mix) => (
             <MixCard 
               key={mix.id} 
               mix={mix} 
-              accessToken={accessToken}
-              onAddToPlaylist={addToPlaylist}
               onPlay={handlePlayCard}
-              isAdding={processingQueue.has(mix.id)}
-              isPlaying={mixes[currentMixIndex]?.id === mix.id && isPlaying}
-              isCurrent={mixes[currentMixIndex]?.id === mix.id}
+              isPlaying={currentMix?.id === mix.id && isPlaying}
+              isCurrent={currentMix?.id === mix.id}
             />
           ))}
         </div>
         
         {mixes.length === 0 && !loading && (
-          <div className="text-center py-20 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800">
-            <p className="text-zinc-500 text-xl">Configura los filtros y haz clic en Generar para descubrir nuevos sonidos.</p>
+          <div className="text-center py-20 bg-zinc-900/20 rounded-2xl border border-dashed border-zinc-800/50">
+            <div className="text-4xl mb-4">🌍</div>
+            <p className="text-zinc-500 text-lg mb-2">No hay resultados</p>
+            <p className="text-zinc-600 text-sm">Configura los filtros y haz clic en "Generar con IA"</p>
           </div>
         )}
       </main>
 
-      {currentMixIndex !== -1 && (
-        <PlayerBar 
-          currentMix={mixes[currentMixIndex]}
-          isPlaying={isPlaying}
-          onPlayPause={() => setIsPlaying(!isPlaying)}
-          onNext={handleNext}
-          onPrev={handlePrev}
-          videoId={mixes[currentMixIndex]?.videoId}
-          onVideoEnd={handleNext}
-        />
-      )}
+      {/* Player */}
+      <PlayerBar 
+        currentMix={currentMix}
+        isPlaying={isPlaying}
+        onPlayPause={() => setIsPlaying(!isPlaying)}
+        onNext={handleNext}
+        onPrev={handlePrev}
+        videoId={currentMix?.videoId}
+        onVideoEnd={handleNext}
+        currentIndex={currentMixIndex}
+        totalTracks={mixes.length}
+        onSavePlaylist={handleSavePlaylist}
+        isSavingPlaylist={isSavingPlaylist}
+        shuffle={shuffle}
+        onToggleShuffle={() => setShuffle(!shuffle)}
+      />
 
+      {/* Settings */}
       <SettingsModal 
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         geminiKey={geminiKey}
         setGeminiKey={setGeminiKey}
-        mapsApiKey={mapsApiKey}
-        setMapsApiKey={setMapsApiKey}
+        googleKey={googleKey}
+        setGoogleKey={setGoogleKey}
+        googleClientId={googleClientId}
+        setGoogleClientId={setGoogleClientId}
       />
     </div>
   );

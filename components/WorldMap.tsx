@@ -1,5 +1,5 @@
-import React from 'react';
-import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps';
+import React, { useCallback } from 'react';
+import { APIProvider, Map, AdvancedMarker, InfoWindow, useAdvancedMarkerRef, Pin } from '@vis.gl/react-google-maps';
 import { MusicMix } from '../types';
 
 interface WorldMapProps {
@@ -9,74 +9,111 @@ interface WorldMapProps {
   apiKey: string;
 }
 
-// Custom Dark Mode Style to match Zinc-950 theme
-const mapStyles = [
-  { elementType: "geometry", stylers: [{ color: "#212121" }] },
-  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
-  { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#757575" }] },
-  { featureType: "administrative.country", elementType: "labels.text.fill", stylers: [{ color: "#9e9e9e" }] },
-  { featureType: "administrative.land_parcel", stylers: [{ visibility: "off" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#bdbdbd" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#18181b" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#616161" }] },
-  { featureType: "poi.park", elementType: "labels.text.stroke", stylers: [{ color: "#1b1b1b" }] },
-  { featureType: "road", elementType: "geometry.fill", stylers: [{ color: "#2c2c2c" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#8a8a8a" }] },
-  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#373737" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3c3c3c" }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: "#4e4e4e" }] },
-  { featureType: "road.local", elementType: "labels.text.fill", stylers: [{ color: "#616161" }] },
-  { featureType: "transit", elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#000000" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#3d3d3d" }] }
-];
+// Colores por continente
+const continentColors: Record<string, { bg: string; border: string; glyph: string }> = {
+  'África':             { bg: '#f59e0b', border: '#d97706', glyph: '#ffffff' },
+  'Africa':             { bg: '#f59e0b', border: '#d97706', glyph: '#ffffff' },
+  'Asia':               { bg: '#ef4444', border: '#dc2626', glyph: '#ffffff' },
+  'Europa':             { bg: '#6366f1', border: '#4f46e5', glyph: '#ffffff' },
+  'Europe':             { bg: '#6366f1', border: '#4f46e5', glyph: '#ffffff' },
+  'América del Norte':  { bg: '#0ea5e9', border: '#0284c7', glyph: '#ffffff' },
+  'North America':      { bg: '#0ea5e9', border: '#0284c7', glyph: '#ffffff' },
+  'América del Sur':    { bg: '#10b981', border: '#059669', glyph: '#ffffff' },
+  'South America':      { bg: '#10b981', border: '#059669', glyph: '#ffffff' },
+  'Oceanía':            { bg: '#ec4899', border: '#db2777', glyph: '#ffffff' },
+  'Oceania':            { bg: '#ec4899', border: '#db2777', glyph: '#ffffff' },
+};
+
+const getColors = (continent: string) => {
+  return continentColors[continent] || { bg: '#8b5cf6', border: '#7c3aed', glyph: '#ffffff' };
+};
+
+// Componente de marcador individual
+const MixMarker: React.FC<{
+  mix: MusicMix;
+  isSelected: boolean;
+  onSelect: (mix: MusicMix) => void;
+  selectedId?: string;
+  setInfoMix: (mix: MusicMix | null) => void;
+  infoMix: MusicMix | null;
+}> = ({ mix, isSelected, onSelect, setInfoMix, infoMix }) => {
+  const [markerRef, marker] = useAdvancedMarkerRef();
+  const colors = getColors(mix.continent);
+
+  return (
+    <>
+      <AdvancedMarker
+        ref={markerRef}
+        position={{ lat: mix.coordinates.lat, lng: mix.coordinates.lng }}
+        title={`${mix.artist} — ${mix.country}`}
+        onClick={() => {
+          onSelect(mix);
+          setInfoMix(mix);
+        }}
+        zIndex={isSelected ? 100 : 1}
+      >
+        <Pin
+          background={isSelected ? '#4f46e5' : colors.bg}
+          borderColor={isSelected ? '#312e81' : colors.border}
+          glyphColor={colors.glyph}
+          scale={isSelected ? 1.3 : 1}
+        />
+      </AdvancedMarker>
+      {infoMix?.id === mix.id && marker && (
+        <InfoWindow anchor={marker} onCloseClick={() => setInfoMix(null)}>
+          <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 180, padding: '4px 0' }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2, color: '#18181b' }}>{mix.artist}</div>
+            <div style={{ fontSize: 12, color: '#6366f1', fontWeight: 600, marginBottom: 4 }}>{mix.style}</div>
+            <div style={{ fontSize: 11, color: '#71717a' }}>{mix.country} · {mix.year} · {mix.bpm} BPM</div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6, lineHeight: 1.4 }}>{mix.description}</div>
+          </div>
+        </InfoWindow>
+      )}
+    </>
+  );
+};
 
 export const WorldMap: React.FC<WorldMapProps> = ({ mixes, onSelect, selectedId, apiKey }) => {
+  const [infoMix, setInfoMix] = React.useState<MusicMix | null>(null);
+
   if (!apiKey) {
     return (
-      <div className="w-full h-[400px] rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900 flex items-center justify-center mb-8">
+      <div className="w-full h-[400px] rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900/50 flex items-center justify-center mb-8">
         <div className="text-center p-6">
-           <p className="text-zinc-500 mb-2">Google Maps API Key required.</p>
-           <p className="text-zinc-600 text-xs">Configure it in Settings.</p>
+          <div className="text-4xl mb-3">🗺️</div>
+          <p className="text-zinc-400 mb-1 font-medium">Google Maps necesita una API Key</p>
+          <p className="text-zinc-600 text-sm">Configúrala en Ajustes para ver el mapa mundial.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-[400px] rounded-xl overflow-hidden border border-zinc-800 shadow-xl mb-8 relative z-0">
-      <APIProvider apiKey={apiKey}>
+    <div className="w-full h-[420px] rounded-2xl overflow-hidden border border-zinc-700 shadow-xl mb-8 relative z-0">
+      <APIProvider apiKey={apiKey} language="es" region="ES">
         <Map
           defaultCenter={{ lat: 20, lng: 0 }}
           defaultZoom={2}
-          styles={mapStyles}
-          disableDefaultUI={true}
-          gestureHandling={'cooperative'}
+          minZoom={2}
+          maxZoom={14}
+          gestureHandling="cooperative"
+          disableDefaultUI={false}
+          mapTypeControl={false}
+          streetViewControl={false}
+          fullscreenControl={false}
+          mapId="DEMO_MAP_ID"
           className="w-full h-full"
         >
-          {mixes.map((mix) => {
-            const isSelected = mix.id === selectedId;
-            return (
-              <Marker
-                key={mix.id}
-                position={{ lat: mix.coordinates.lat, lng: mix.coordinates.lng }}
-                onClick={() => onSelect(mix)}
-                title={`${mix.artist} (${mix.country})`}
-                icon={{
-                  path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z',
-                  fillColor: isSelected ? "#6366f1" : "#a1a1aa",
-                  fillOpacity: 1,
-                  strokeWeight: 1,
-                  strokeColor: "#09090b",
-                  scale: 1.5,
-                  anchor: { x: 12, y: 22 } as any
-                }}
-              />
-            );
-          })}
+          {mixes.map((mix) => (
+            <MixMarker
+              key={mix.id}
+              mix={mix}
+              isSelected={mix.id === selectedId}
+              onSelect={onSelect}
+              setInfoMix={setInfoMix}
+              infoMix={infoMix}
+            />
+          ))}
         </Map>
       </APIProvider>
     </div>

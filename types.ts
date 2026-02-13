@@ -8,7 +8,7 @@ export interface MusicMix {
   bpm: number;
   description: string;
   searchQuery: string;
-  videoId?: string; // Cache the YouTube ID once found
+  videoId?: string;
   coordinates: {
     lat: number;
     lng: number;
@@ -23,33 +23,23 @@ export interface SearchCriteria {
   bpm: string;
 }
 
-export interface GeneratedPlaylist {
-  id: string;
-  title: string;
-  url: string;
-}
-
-export interface YouTubeVideo {
-  id: {
-    videoId: string;
-  };
-  snippet: {
-    title: string;
-    channelTitle: string;
-  };
-}
-
-export interface GoogleAuthResponse {
-  access_token: string;
-  expires_in: number;
-  scope: string;
-  token_type: string;
-}
-
 declare global {
   interface Window {
-    google: any;
-    onYouTubeIframeAPIReady: () => void;
+    onYouTubeIframeAPIReady: (() => void) | undefined;
     YT: any;
+    google: {
+      accounts: {
+        oauth2: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            callback: (response: any) => void;
+            error_callback?: (error: any) => void;
+          }) => {
+            requestAccessToken: (overrides?: any) => void;
+          };
+        };
+      };
+    };
   }
 }

@@ -1,26 +1,19 @@
-import { YouTubeVideo } from "../types";
-
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 
 /**
- * Searches for a video ID based on a query.
+ * Busca un video en YouTube usando una API Key (sin OAuth).
+ * Usa YouTube Data API v3 — requiere tener habilitada "YouTube Data API v3"
+ * en el proyecto de Google Cloud.
  */
-export const searchVideo = async (query: string, accessToken: string): Promise<string | null> => {
+export const searchVideoWithKey = async (query: string, apiKey: string): Promise<string | null> => {
   try {
-    const response = await fetch(
-      `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(query)}&maxResults=1&type=video`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: "application/json",
-        },
-      }
-    );
+    const url = `${YOUTUBE_API_BASE}/search?part=id&q=${encodeURIComponent(query)}&maxResults=1&type=video&key=${apiKey}`;
+    const response = await fetch(url);
 
     if (!response.ok) {
-      const err = await response.json();
-      console.error("YouTube Search Error", err);
-      throw new Error("Failed to search video");
+      const err = await response.json().catch(() => ({}));
+      console.error("YouTube Search Error:", response.status, err);
+      return null;
     }
 
     const data = await response.json();
@@ -29,34 +22,68 @@ export const searchVideo = async (query: string, accessToken: string): Promise<s
     }
     return null;
   } catch (error) {
-    console.error("Search API Exception:", error);
+    console.error("YouTube search exception:", error);
     return null;
   }
 };
 
 /**
- * Creates a new playlist on the authenticated user's channel.
+ * Obtiene un access token de Google usando OAuth 2.0 (Google Identity Services).
+ * Abre un popup de consentimiento si es necesario.
  */
-export const createPlaylist = async (title: string, description: string, accessToken: string): Promise<string> => {
+export const getGoogleAccessToken = (clientId: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!window.google?.accounts?.oauth2) {
+      reject(new Error("Google Identity Services no está cargado. Recarga la página."));
+      return;
+    }
+
+    const tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/youtube',
+      callback: (response: any) => {
+        if (response.error) {
+          reject(new Error(response.error_description || response.error));
+        } else if (response.access_token) {
+          resolve(response.access_token);
+        } else {
+          reject(new Error("No se obtuvo token de acceso."));
+        }
+      },
+      error_callback: (error: any) => {
+        reject(new Error(error.message || "Error en la autenticación de Google."));
+      },
+    });
+
+    tokenClient.requestAccessToken();
+  });
+};
+
+/**
+ * Crea una playlist privada en YouTube.
+ * Retorna el ID de la playlist creada.
+ */
+export const createYouTubePlaylist = async (
+  accessToken: string,
+  title: string,
+  description: string
+): Promise<string> => {
   const response = await fetch(`${YOUTUBE_API_BASE}/playlists?part=snippet,status`, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      snippet: {
-        title: title,
-        description: description,
-      },
-      status: {
-        privacyStatus: "private", // Default to private for safety
-      },
+      snippet: { title, description },
+      status: { privacyStatus: 'private' },
     }),
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create playlist");
+    const err = await response.json().catch(() => ({}));
+    console.error("YouTube Create Playlist Error:", err);
+    throw new Error(err.error?.message || "Error creando la playlist.");
   }
 
   const data = await response.json();
@@ -64,27 +91,39 @@ export const createPlaylist = async (title: string, description: string, accessT
 };
 
 /**
- * Adds a video to a playlist.
+ * Añade un video a una playlist de YouTube.
  */
-export const addVideoToPlaylist = async (playlistId: string, videoId: string, accessToken: string) => {
-  const response = await fetch(`${YOUTUBE_API_BASE}/playlistItems?part=snippet`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      snippet: {
-        playlistId: playlistId,
-        resourceId: {
-          kind: "youtube#video",
-          videoId: videoId,
-        },
+export const addVideoToPlaylist = async (
+  accessToken: string,
+  playlistId: string,
+  videoId: string
+): Promise<boolean> => {
+  try {
+    const response = await fetch(`${YOUTUBE_API_BASE}/playlistItems?part=snippet`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        snippet: {
+          playlistId,
+          resourceId: {
+            kind: 'youtube#video',
+            videoId,
+          },
+        },
+      }),
+    });
 
-  if (!response.ok) {
-    console.error("Failed to add video to playlist");
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.error("YouTube Add to Playlist Error:", err);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error("Error adding video to playlist:", error);
+    return false;
   }
 };
