@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { MusicMix } from '@/types';
 import { getContinentStyle } from '@/constants/continents';
+import { getAudioUrl, clearAudioCache } from '@/services/audioProxy';
 
 interface PlayerBarProps {
   currentMix: MusicMix | null;
@@ -36,24 +37,105 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   shuffle,
   onToggleShuffle,
 }) => {
+  // === Refs ===
   const playerRef = useRef<any>(null);
-  const [playerReady, setPlayerReady] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const onVideoEndRef = useRef(onVideoEnd);
   const videoIdRef = useRef(videoId);
   const isPlayingRef = useRef(isPlaying);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(80);
-  const [showVolume, setShowVolume] = useState(false);
   const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const silentSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
+  // === State ===
+  const [playerReady, setPlayerReady] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(80);
+  const [showVolume, setShowVolume] = useState(false);
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [audioFailed, setAudioFailed] = useState(false);
+
+  // === Derived: ¿usar audio nativo o YouTube iframe? ===
+  const useNativeAudio = !!audioSrc && !audioFailed;
+
+  // === Ref syncing ===
   useEffect(() => { onVideoEndRef.current = onVideoEnd; }, [onVideoEnd]);
   useEffect(() => { videoIdRef.current = videoId; }, [videoId]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
-  // Crear YouTube player una sola vez
+  // ====================================================================
+  // AUDIO NATIVO: Obtener URL de audio directa (Piped/Invidious)
+  // Permite reproducción con pantalla bloqueada y en segundo plano
+  // ====================================================================
+  useEffect(() => {
+    if (!videoId) {
+      setAudioSrc(null);
+      setAudioFailed(false);
+      return;
+    }
+
+    let cancelled = false;
+    setAudioSrc(null);
+    setAudioFailed(false);
+    setCurrentTime(0);
+    setDuration(0);
+
+    getAudioUrl(videoId)
+      .then(url => {
+        if (cancelled) return;
+        if (url) {
+          setAudioSrc(url);
+        } else {
+          setAudioFailed(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAudioFailed(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [videoId]);
+
+  // Audio element: play cuando se carga el metadata
+  const handleAudioLoaded = useCallback(() => {
+    if (!audioRef.current) return;
+    const dur = audioRef.current.duration;
+    if (dur && !isNaN(dur)) setDuration(dur);
+    audioRef.current.volume = volume / 100;
+    if (isPlayingRef.current) audioRef.current.play().catch(() => {});
+  }, [volume]);
+
+  // Audio element: actualizar progreso
+  const handleAudioTimeUpdate = useCallback(() => {
+    if (!audioRef.current) return;
+    const ct = audioRef.current.currentTime;
+    const dur = audioRef.current.duration;
+    setCurrentTime(ct);
+    if (dur && !isNaN(dur) && dur > 0) {
+      setDuration(dur);
+      if ('mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: dur,
+            position: Math.min(ct, dur),
+            playbackRate: 1,
+          });
+        } catch (_) {}
+      }
+    }
+  }, []);
+
+  // Audio element: error — URL expirada, usar YouTube como fallback
+  const handleAudioError = useCallback(() => {
+    if (videoIdRef.current) clearAudioCache(videoIdRef.current);
+    setAudioSrc(null);
+    setAudioFailed(true);
+  }, []);
+
+  // ====================================================================
+  // YOUTUBE IFRAME: Fallback cuando el audio nativo no está disponible
+  // ====================================================================
   useEffect(() => {
     const createPlayer = () => {
       if (playerRef.current) return;
@@ -75,7 +157,6 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           onReady: () => {
             setPlayerReady(true);
             playerRef.current?.setVolume(80);
-            if (videoIdRef.current) playerRef.current.loadVideoById(videoIdRef.current);
           },
           onStateChange: (event: any) => {
             if (event.data === window.YT.PlayerState.ENDED) onVideoEndRef.current();
@@ -108,41 +189,69 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     };
   }, []);
 
-  // Cargar video
+  // Cargar video en YouTube player SOLO cuando audio nativo falló
   useEffect(() => {
     if (!playerReady || !playerRef.current || !videoId) return;
-    try { playerRef.current.loadVideoById(videoId); setCurrentTime(0); setDuration(0); } catch (_) {}
-  }, [videoId, playerReady]);
+    if (audioFailed && !useNativeAudio) {
+      try {
+        playerRef.current.loadVideoById(videoId);
+      } catch (_) {}
+    }
+  }, [videoId, playerReady, audioFailed, useNativeAudio]);
 
-  // Play/Pause
+  // ====================================================================
+  // CONTROLES UNIFICADOS: Play/Pause, Seek, Volume
+  // ====================================================================
+
+  // Play/Pause — dirigir al player activo
   useEffect(() => {
-    if (!playerReady || !playerRef.current) return;
-    try { if (isPlaying) playerRef.current.playVideo(); else playerRef.current.pauseVideo(); } catch (_) {}
-  }, [isPlaying, playerReady]);
+    if (useNativeAudio) {
+      if (!audioRef.current) return;
+      if (isPlaying) audioRef.current.play().catch(() => {});
+      else audioRef.current.pause();
+    } else if (playerReady && playerRef.current && audioFailed) {
+      try {
+        if (isPlaying) playerRef.current.playVideo();
+        else playerRef.current.pauseVideo();
+      } catch (_) {}
+    }
+  }, [isPlaying, playerReady, useNativeAudio, audioFailed]);
 
-  // Media Session API — controles en lock screen / notificaciones para background playback
+  // Media Session API — controles en lock screen / notificaciones
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
+
     navigator.mediaSession.setActionHandler('play', onPlayPause);
     navigator.mediaSession.setActionHandler('pause', onPlayPause);
     navigator.mediaSession.setActionHandler('previoustrack', onPrev);
     navigator.mediaSession.setActionHandler('nexttrack', onNext);
+
     navigator.mediaSession.setActionHandler('seekforward', () => {
-      if (playerRef.current?.seekTo && duration > 0) {
-        const t = Math.min(currentTime + 10, duration); playerRef.current.seekTo(t, true); setCurrentTime(t);
+      const t = Math.min(currentTime + 10, duration || Infinity);
+      if (useNativeAudio && audioRef.current) {
+        audioRef.current.currentTime = t;
+      } else if (playerRef.current?.seekTo && duration > 0) {
+        playerRef.current.seekTo(t, true);
       }
+      setCurrentTime(t);
     });
+
     navigator.mediaSession.setActionHandler('seekbackward', () => {
-      if (playerRef.current?.seekTo) {
-        const t = Math.max(currentTime - 10, 0); playerRef.current.seekTo(t, true); setCurrentTime(t);
+      const t = Math.max(currentTime - 10, 0);
+      if (useNativeAudio && audioRef.current) {
+        audioRef.current.currentTime = t;
+      } else if (playerRef.current?.seekTo) {
+        playerRef.current.seekTo(t, true);
       }
+      setCurrentTime(t);
     });
+
     return () => {
-      ['play','pause','previoustrack','nexttrack','seekforward','seekbackward'].forEach(a => {
+      ['play', 'pause', 'previoustrack', 'nexttrack', 'seekforward', 'seekbackward'].forEach(a => {
         try { navigator.mediaSession.setActionHandler(a as any, null); } catch (_) {}
       });
     };
-  }, [onPlayPause, onPrev, onNext, currentTime, duration]);
+  }, [onPlayPause, onPrev, onNext, currentTime, duration, useNativeAudio]);
 
   // Media Session metadata
   useEffect(() => {
@@ -158,11 +267,12 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     });
   }, [currentMix]);
 
-  // Progress polling
+  // Progress polling — solo para YouTube fallback (audio nativo usa onTimeUpdate)
   useEffect(() => {
     if (progressInterval.current) clearInterval(progressInterval.current);
     progressInterval.current = null;
-    if (isPlaying && playerReady && playerRef.current) {
+
+    if (!useNativeAudio && isPlaying && playerReady && playerRef.current) {
       progressInterval.current = setInterval(() => {
         try {
           const ct = playerRef.current?.getCurrentTime?.() || 0;
@@ -170,22 +280,24 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           setCurrentTime(ct);
           if (dur > 0) setDuration(dur);
           if ('mediaSession' in navigator && dur > 0) {
-            try { navigator.mediaSession.setPositionState({ duration: dur, position: ct, playbackRate: 1 }); } catch (_) {}
+            try {
+              navigator.mediaSession.setPositionState({ duration: dur, position: ct, playbackRate: 1 });
+            } catch (_) {}
           }
         } catch (_) {}
       }, 500);
     }
     return () => { if (progressInterval.current) clearInterval(progressInterval.current); };
-  }, [isPlaying, playerReady]);
+  }, [isPlaying, playerReady, useNativeAudio]);
 
-  // Silent audio keep-alive: mantiene la sesión de audio activa para que el navegador
-  // no suspenda la pestaña en segundo plano
+  // Silent audio keep-alive — solo para YouTube fallback
   useEffect(() => {
+    if (useNativeAudio) return;
     if (isPlaying && playerReady) {
       if (!audioCtxRef.current) {
         try {
           const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); // 1 segundo de silencio
+          const buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
           const source = ctx.createBufferSource();
           source.buffer = buffer;
           source.loop = true;
@@ -202,9 +314,8 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         audioCtxRef.current.suspend().catch(() => {});
       }
     }
-  }, [isPlaying, playerReady]);
+  }, [isPlaying, playerReady, useNativeAudio]);
 
-  // Cleanup del audio context
   useEffect(() => {
     return () => {
       try {
@@ -214,14 +325,14 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     };
   }, []);
 
-  // Visibility change handler: reanuda la reproducción cuando YouTube la pausa
-  // al pasar la página a segundo plano
+  // Visibility change handler — solo para YouTube fallback
   useEffect(() => {
+    if (useNativeAudio) return;
+
     const handleVisibilityChange = () => {
       if (!playerRef.current || !isPlayingRef.current) return;
 
       if (document.hidden) {
-        // La página va a segundo plano — YouTube puede pausar, intentar reanudar
         const retryPlay = () => {
           try {
             const state = playerRef.current?.getPlayerState?.();
@@ -234,7 +345,6 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         setTimeout(retryPlay, 1000);
         setTimeout(retryPlay, 3000);
       } else {
-        // La página vuelve al primer plano — verificar y reanudar si es necesario
         try {
           const state = playerRef.current.getPlayerState?.();
           if (
@@ -247,7 +357,6 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           }
         } catch (_) {}
 
-        // Reanudar AudioContext si fue suspendido por el navegador
         if (audioCtxRef.current?.state === 'suspended') {
           audioCtxRef.current.resume().catch(() => {});
         }
@@ -256,22 +365,36 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  }, [useNativeAudio]);
+
+  // ====================================================================
+  // HANDLERS
+  // ====================================================================
 
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!playerRef.current || !duration) return;
+    if (!duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const newTime = fraction * duration;
-    playerRef.current.seekTo(newTime, true);
+
+    if (useNativeAudio && audioRef.current) {
+      audioRef.current.currentTime = newTime;
+    } else if (playerRef.current?.seekTo) {
+      playerRef.current.seekTo(newTime, true);
+    }
     setCurrentTime(newTime);
-  }, [duration]);
+  }, [duration, useNativeAudio]);
 
   const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const v = Number(e.target.value);
     setVolume(v);
+    if (audioRef.current) audioRef.current.volume = v / 100;
     playerRef.current?.setVolume?.(v);
   }, []);
+
+  // ====================================================================
+  // RENDER
+  // ====================================================================
 
   const isVisible = !!currentMix;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -279,6 +402,19 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
 
   return (
     <>
+      {/* Elemento <audio> nativo — permite reproducción en segundo plano y pantalla bloqueada */}
+      <audio
+        ref={audioRef}
+        src={audioSrc || undefined}
+        preload="auto"
+        onTimeUpdate={handleAudioTimeUpdate}
+        onLoadedMetadata={handleAudioLoaded}
+        onEnded={onVideoEnd}
+        onError={handleAudioError}
+        onPlay={() => { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; }}
+        onPause={() => { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; }}
+      />
+
       {/* Spacer para que el contenido no quede detrás del player fijo */}
       {isVisible && <div className="h-[144px] sm:h-[120px]" />}
 
@@ -299,15 +435,48 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
             <div className="flex items-center gap-3 sm:gap-4">
 
-              {/* YouTube player — dentro del bar, visible en desktop */}
+              {/* YouTube iframe (fallback) — siempre oculto cuando audio nativo está activo */}
               <div
                 id="yt-player-wrapper"
-                className="fixed -left-[9999px] -top-[9999px] w-[320px] h-[180px] overflow-hidden pointer-events-none
-                           sm:relative sm:left-auto sm:top-auto sm:w-[213px] sm:h-[120px] sm:overflow-hidden sm:pointer-events-auto
-                           sm:shrink-0 sm:rounded-lg sm:shadow-lg sm:shadow-black/30 sm:border sm:border-zinc-800/30"
+                className={
+                  useNativeAudio
+                    ? 'fixed -left-[9999px] -top-[9999px] w-[320px] h-[180px] overflow-hidden pointer-events-none'
+                    : 'fixed -left-[9999px] -top-[9999px] w-[320px] h-[180px] overflow-hidden pointer-events-none sm:relative sm:left-auto sm:top-auto sm:w-[213px] sm:h-[120px] sm:overflow-hidden sm:pointer-events-auto sm:shrink-0 sm:rounded-lg sm:shadow-lg sm:shadow-black/30 sm:border sm:border-zinc-800/30'
+                }
               >
                 <div id="yt-player-element" className="w-full h-full" />
               </div>
+
+              {/* Thumbnail desktop — visible cuando audio nativo está activo */}
+              {useNativeAudio && (
+                <div className="hidden sm:block shrink-0">
+                  <div className="w-[120px] h-[120px] rounded-lg overflow-hidden bg-zinc-800 relative shadow-lg shadow-black/30 border border-zinc-800/30">
+                    {videoId ? (
+                      <img
+                        src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                        </svg>
+                      </div>
+                    )}
+                    {isPlaying && (
+                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                        <div className="flex gap-[3px] items-end h-5">
+                          <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
+                          <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
+                          <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.4s', '--eq-delay': '0.2s' } as React.CSSProperties} />
+                          <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.6s', '--eq-delay': '0.15s' } as React.CSSProperties} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Thumbnail / Album art en mobile */}
               <div className="sm:hidden shrink-0">
