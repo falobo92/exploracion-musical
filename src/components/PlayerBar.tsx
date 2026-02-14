@@ -40,14 +40,18 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   const [playerReady, setPlayerReady] = useState(false);
   const onVideoEndRef = useRef(onVideoEnd);
   const videoIdRef = useRef(videoId);
+  const isPlayingRef = useRef(isPlaying);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(80);
   const [showVolume, setShowVolume] = useState(false);
   const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const silentSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => { onVideoEndRef.current = onVideoEnd; }, [onVideoEnd]);
   useEffect(() => { videoIdRef.current = videoId; }, [videoId]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
   // Crear YouTube player una sola vez
   useEffect(() => {
@@ -65,6 +69,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           fs: 0,
           disablekb: 1,
           iv_load_policy: 3,
+          origin: window.location.origin,
         },
         events: {
           onReady: () => {
@@ -173,6 +178,86 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     return () => { if (progressInterval.current) clearInterval(progressInterval.current); };
   }, [isPlaying, playerReady]);
 
+  // Silent audio keep-alive: mantiene la sesión de audio activa para que el navegador
+  // no suspenda la pestaña en segundo plano
+  useEffect(() => {
+    if (isPlaying && playerReady) {
+      if (!audioCtxRef.current) {
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); // 1 segundo de silencio
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.loop = true;
+          source.connect(ctx.destination);
+          source.start();
+          audioCtxRef.current = ctx;
+          silentSourceRef.current = source;
+        } catch (_) {}
+      } else if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
+    } else {
+      if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+        audioCtxRef.current.suspend().catch(() => {});
+      }
+    }
+  }, [isPlaying, playerReady]);
+
+  // Cleanup del audio context
+  useEffect(() => {
+    return () => {
+      try {
+        silentSourceRef.current?.stop();
+        audioCtxRef.current?.close();
+      } catch (_) {}
+    };
+  }, []);
+
+  // Visibility change handler: reanuda la reproducción cuando YouTube la pausa
+  // al pasar la página a segundo plano
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!playerRef.current || !isPlayingRef.current) return;
+
+      if (document.hidden) {
+        // La página va a segundo plano — YouTube puede pausar, intentar reanudar
+        const retryPlay = () => {
+          try {
+            const state = playerRef.current?.getPlayerState?.();
+            if (state !== window.YT?.PlayerState?.PLAYING && isPlayingRef.current) {
+              playerRef.current?.playVideo();
+            }
+          } catch (_) {}
+        };
+        setTimeout(retryPlay, 200);
+        setTimeout(retryPlay, 1000);
+        setTimeout(retryPlay, 3000);
+      } else {
+        // La página vuelve al primer plano — verificar y reanudar si es necesario
+        try {
+          const state = playerRef.current.getPlayerState?.();
+          if (
+            (state === window.YT?.PlayerState?.PAUSED ||
+             state === window.YT?.PlayerState?.BUFFERING ||
+             state === window.YT?.PlayerState?.CUED) &&
+            isPlayingRef.current
+          ) {
+            playerRef.current.playVideo();
+          }
+        } catch (_) {}
+
+        // Reanudar AudioContext si fue suspendido por el navegador
+        if (audioCtxRef.current?.state === 'suspended') {
+          audioCtxRef.current.resume().catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!playerRef.current || !duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -217,7 +302,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
               {/* YouTube player — dentro del bar, visible en desktop */}
               <div
                 id="yt-player-wrapper"
-                className="fixed -left-[9999px] -top-[9999px] w-[1px] h-[1px] overflow-hidden pointer-events-none
+                className="fixed -left-[9999px] -top-[9999px] w-[320px] h-[180px] overflow-hidden pointer-events-none
                            sm:relative sm:left-auto sm:top-auto sm:w-[213px] sm:h-[120px] sm:overflow-hidden sm:pointer-events-auto
                            sm:shrink-0 sm:rounded-lg sm:shadow-lg sm:shadow-black/30 sm:border sm:border-zinc-800/30"
               >
