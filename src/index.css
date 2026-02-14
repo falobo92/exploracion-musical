@@ -8,12 +8,18 @@
 }
 
 /* Base styles */
+html, body, #root {
+  min-height: 100%;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: #09090b;
   color: #f4f4f5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
 }
 
 /* Custom scrollbar */
@@ -114,6 +120,10 @@ body {
   background: linear-gradient(180deg, rgba(24, 24, 27, 0.92) 0%, rgba(9, 9, 11, 0.97) 100%);
   backdrop-filter: blur(24px) saturate(1.2);
   border-top: 1px solid rgba(63, 63, 70, 0.3);
+}
+
+.player-safe-area {
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
 .progress-glow {

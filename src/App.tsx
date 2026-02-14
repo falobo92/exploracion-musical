@@ -22,7 +22,10 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isSavedSearchesOpen, setIsSavedSearchesOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.innerWidth >= 1024;
+  });
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
 
   // API Keys
@@ -83,10 +86,10 @@ export default function App() {
   }, [savedSearches.save, notify]);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans flex flex-col">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans flex flex-col overflow-x-hidden">
       <Header onOpenSettings={openSettings} hasGemini={apiKeys.hasGemini} hasGoogle={apiKeys.hasGoogle} />
 
-      <main className="flex-1 flex flex-col px-4 sm:px-6 py-4 max-w-[1920px] mx-auto w-full">
+      <main className="flex-1 flex flex-col px-3 sm:px-6 py-3 sm:py-4 max-w-[1920px] mx-auto w-full">
         <FilterBar
           criteria={criteria}
           onChange={handleCriteriaChange}
@@ -112,8 +115,19 @@ export default function App() {
               mixes={filteredMixes}
               onSelect={player.handlePlayCard}
               selectedId={player.currentMix?.id}
-              className={`w-full h-[300px] sm:h-[400px] ${sidebarOpen ? 'lg:h-[calc(100vh-320px)]' : 'lg:h-[calc(100vh-320px)]'} rounded-2xl overflow-hidden border border-zinc-800/40 shadow-2xl shadow-black/20 relative z-0`}
+              className={`w-full h-[42dvh] min-h-[260px] max-h-[480px] sm:h-[400px] ${sidebarOpen ? 'lg:h-[calc(100vh-320px)]' : 'lg:h-[calc(100vh-320px)]'} rounded-2xl overflow-hidden border border-zinc-800/40 shadow-2xl shadow-black/20 relative z-0`}
             />
+          </div>
+
+          {/* Toggle lista en móvil */}
+          <div className="lg:hidden">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="w-full mt-2 mb-1 rounded-xl border border-zinc-800/50 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-300 hover:text-white hover:bg-zinc-800/60 transition-colors"
+              aria-label={sidebarOpen ? 'Ocultar lista de canciones' : 'Mostrar lista de canciones'}
+            >
+              {sidebarOpen ? 'Ocultar lista de canciones' : 'Mostrar lista de canciones'}
+            </button>
           </div>
 
           {/* Botón toggle panel lateral - solo desktop */}
@@ -130,7 +144,9 @@ export default function App() {
 
           {/* Panel lateral de canciones */}
           <div className={`transition-all duration-300 ease-out overflow-hidden ${
-            sidebarOpen ? 'lg:w-[45%] xl:w-[40%]' : 'lg:w-0 lg:opacity-0'
+            sidebarOpen
+              ? 'max-h-[2200px] opacity-100 lg:w-[45%] xl:w-[40%]'
+              : 'max-h-0 opacity-0 pointer-events-none lg:w-0'
           }`}>
             <div className="lg:max-h-[calc(100vh-320px)] lg:overflow-y-auto lg:pr-1 scrollbar-thin">
               {/* Header del panel */}
@@ -179,6 +195,8 @@ export default function App() {
         currentMix={player.currentMix}
         isPlaying={player.isPlaying}
         onPlayPause={() => player.setIsPlaying(!player.isPlaying)}
+        onPlay={() => player.setIsPlaying(true)}
+        onPause={() => player.setIsPlaying(false)}
         onNext={player.handleNext}
         onPrev={player.handlePrev}
         videoId={player.currentMix?.videoId}

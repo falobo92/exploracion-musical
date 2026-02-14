@@ -7,6 +7,8 @@ interface PlayerBarProps {
   currentMix: MusicMix | null;
   isPlaying: boolean;
   onPlayPause: () => void;
+  onPlay: () => void;
+  onPause: () => void;
   onNext: () => void;
   onPrev: () => void;
   videoId: string | undefined;
@@ -28,6 +30,8 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   currentMix,
   isPlaying,
   onPlayPause,
+  onPlay,
+  onPause,
   onNext,
   onPrev,
   videoId,
@@ -55,6 +59,8 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   const [showVolume, setShowVolume] = useState(false);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [audioFailed, setAudioFailed] = useState(false);
+  const [audioRetryToken, setAudioRetryToken] = useState(0);
+  const audioRetryCountRef = useRef(0);
 
   // === Derived: ¿usar audio nativo o YouTube iframe? ===
   const useNativeAudio = !!audioSrc && !audioFailed;
@@ -72,10 +78,12 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     if (!videoId) {
       setAudioSrc(null);
       setAudioFailed(false);
+      audioRetryCountRef.current = 0;
       return;
     }
 
     let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
     setAudioSrc(null);
     setAudioFailed(false);
     setCurrentTime(0);
@@ -86,16 +94,35 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         if (cancelled) return;
         if (url) {
           setAudioSrc(url);
+          audioRetryCountRef.current = 0;
         } else {
-          setAudioFailed(true);
+          if (audioRetryCountRef.current < 2) {
+            audioRetryCountRef.current += 1;
+            retryTimeout = setTimeout(() => {
+              setAudioRetryToken(t => t + 1);
+            }, 450);
+          } else {
+            setAudioFailed(true);
+          }
         }
       })
       .catch(() => {
-        if (!cancelled) setAudioFailed(true);
+        if (cancelled) return;
+        if (audioRetryCountRef.current < 2) {
+          audioRetryCountRef.current += 1;
+          retryTimeout = setTimeout(() => {
+            setAudioRetryToken(t => t + 1);
+          }, 450);
+        } else {
+          setAudioFailed(true);
+        }
       });
 
-    return () => { cancelled = true; };
-  }, [videoId]);
+    return () => {
+      cancelled = true;
+      if (retryTimeout) clearTimeout(retryTimeout);
+    };
+  }, [videoId, audioRetryToken]);
 
   // Audio element: play cuando se carga el metadata
   const handleAudioLoaded = useCallback(() => {
@@ -129,6 +156,13 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   // Audio element: error — URL expirada, usar YouTube como fallback
   const handleAudioError = useCallback(() => {
     if (videoIdRef.current) clearAudioCache(videoIdRef.current);
+    if (audioRetryCountRef.current < 2) {
+      audioRetryCountRef.current += 1;
+      setAudioSrc(null);
+      setAudioFailed(false);
+      setAudioRetryToken(t => t + 1);
+      return;
+    }
     setAudioSrc(null);
     setAudioFailed(true);
   }, []);
@@ -221,8 +255,8 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
-    navigator.mediaSession.setActionHandler('play', onPlayPause);
-    navigator.mediaSession.setActionHandler('pause', onPlayPause);
+    navigator.mediaSession.setActionHandler('play', onPlay);
+    navigator.mediaSession.setActionHandler('pause', onPause);
     navigator.mediaSession.setActionHandler('previoustrack', onPrev);
     navigator.mediaSession.setActionHandler('nexttrack', onNext);
 
@@ -251,7 +285,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         try { navigator.mediaSession.setActionHandler(a as any, null); } catch (_) {}
       });
     };
-  }, [onPlayPause, onPrev, onNext, currentTime, duration, useNativeAudio]);
+  }, [onPlay, onPause, onPrev, onNext, currentTime, duration, useNativeAudio]);
 
   // Media Session metadata
   useEffect(() => {
@@ -407,12 +441,19 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         ref={audioRef}
         src={audioSrc || undefined}
         preload="auto"
+        playsInline
         onTimeUpdate={handleAudioTimeUpdate}
         onLoadedMetadata={handleAudioLoaded}
         onEnded={onVideoEnd}
         onError={handleAudioError}
-        onPlay={() => { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; }}
-        onPause={() => { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; }}
+        onPlay={() => {
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+          if (!isPlayingRef.current) onPlay();
+        }}
+        onPause={() => {
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+          if (isPlayingRef.current) onPause();
+        }}
       />
 
       {/* Spacer para que el contenido no quede detrás del player fijo */}
@@ -431,7 +472,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           </div>
         </div>
 
-        <div className="player-glass">
+        <div className="player-glass player-safe-area">
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
             <div className="flex items-center gap-3 sm:gap-4">
 
