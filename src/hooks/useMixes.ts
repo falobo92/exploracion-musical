@@ -1,0 +1,135 @@
+import { useState, useMemo, useCallback } from 'react';
+import type { MusicMix, SearchCriteria } from '@/types';
+import { DEMO_MIXES } from '@/constants/demo-mixes';
+import { generateStrangeMixes } from '@/services/gemini';
+
+const STORAGE_KEY = 'atlas_sonico_mixes';
+
+function loadPersistedMixes(): MusicMix[] {
+  try {
+    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return DEMO_MIXES;
+}
+
+function persistMixes(mixes: MusicMix[]) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(mixes));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+export function useMixes() {
+  const [mixes, setMixesRaw] = useState<MusicMix[]>(loadPersistedMixes);
+  const [loading, setLoading] = useState(false);
+
+  const [criteria, setCriteria] = useState<SearchCriteria>({
+    continent: '',
+    country: '',
+    style: '',
+    year: '',
+    bpm: '',
+    descriptiveQuery: '',
+    songCount: 15,
+  });
+
+  // Filtrado local sobre mixes existentes
+  const filteredMixes = useMemo(() => {
+    return mixes.filter(mix => {
+      if (criteria.continent && !mix.continent.toLowerCase().includes(criteria.continent.toLowerCase())) {
+        return false;
+      }
+      if (criteria.country && !mix.country.toLowerCase().includes(criteria.country.toLowerCase())) {
+        return false;
+      }
+      if (criteria.style && !mix.style.toLowerCase().includes(criteria.style.toLowerCase())) {
+        return false;
+      }
+      if (criteria.year && !mix.year.toLowerCase().includes(criteria.year.toLowerCase())) {
+        return false;
+      }
+      if (criteria.bpm) {
+        const targetBpm = parseInt(criteria.bpm, 10);
+        if (!isNaN(targetBpm) && Math.abs(mix.bpm - targetBpm) > 20) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [mixes, criteria]);
+
+  const setMixes = useCallback((updater: MusicMix[] | ((prev: MusicMix[]) => MusicMix[])) => {
+    setMixesRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      persistMixes(next);
+      return next;
+    });
+  }, []);
+
+  /** Actualizar criterios parcialmente (para campos custom como songCount) */
+  const updateCriteria = useCallback((updates: Partial<SearchCriteria>) => {
+    setCriteria(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  const generate = useCallback(
+    async (
+      geminiKey: string,
+      options: {
+        notify: (msg: string, type?: 'info' | 'success' | 'error' | 'loading', duration?: number) => string;
+        update: (id: string, msg: string, type?: 'info' | 'success' | 'error' | 'loading', duration?: number) => void;
+        openSettings: () => void;
+        onReset: () => void;
+      }
+    ) => {
+      if (!geminiKey) {
+        options.notify('Falta la clave de Gemini.', 'error');
+        options.openSettings();
+        return;
+      }
+
+      setLoading(true);
+      options.onReset();
+      const desc = criteria.descriptiveQuery ? ` — "${criteria.descriptiveQuery}"` : '';
+      const toastId = options.notify(`Generando ${criteria.songCount} descubrimientos musicales con IA${desc}...`, 'loading');
+
+      try {
+        const newMixes = await generateStrangeMixes(geminiKey, criteria);
+        setMixes(newMixes);
+        options.update(toastId, `${newMixes.length} descubrimientos generados`, 'success');
+      } catch (error) {
+        console.error(error);
+        options.update(toastId, 'Error generando mezclas. Verifica tu clave de Gemini.', 'error');
+        options.openSettings();
+      } finally {
+        setLoading(false);
+      }
+    },
+    [criteria, setMixes]
+  );
+
+  const handleCriteriaChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setCriteria(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    },
+    []
+  );
+
+  return {
+    mixes,
+    filteredMixes,
+    setMixes,
+    loading,
+    criteria,
+    setCriteria,
+    updateCriteria,
+    handleCriteriaChange,
+    generate,
+  };
+}
