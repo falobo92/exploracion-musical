@@ -4,6 +4,7 @@ export interface MusicMix {
   country: string;
   continent: ContinentKey;
   artist: string;
+  songTitle?: string;
   year: string;
   bpm: number;
   description: string;

@@ -1,14 +1,9 @@
-/**
- * Servicio para obtener URLs de audio directas desde YouTube videos.
- * Usa APIs de Piped e Invidious como proxies para extraer streams de audio,
- * permitiendo reproducción en segundo plano y con pantalla bloqueada
- * a través del elemento <audio> nativo del navegador.
- */
-
 const PIPED_INSTANCES = [
   'https://pipedapi.kavin.rocks',
   'https://pipedapi.adminforge.de',
   'https://pipedapi.r4fo.com',
+  'https://api.piped.privacy.com.de',
+  'https://pipedapi.smnz.de'
 ];
 
 const INVIDIOUS_INSTANCES = [
@@ -22,7 +17,6 @@ interface AudioCacheEntry {
   timestamp: number;
 }
 
-// Cache con TTL de 5 horas (las URLs de Google expiran ~6h)
 const CACHE_TTL = 5 * 60 * 60 * 1000;
 const audioCache = new Map<string, AudioCacheEntry>();
 
@@ -40,105 +34,70 @@ function setCachedUrl(videoId: string, url: string) {
   audioCache.set(videoId, { url, timestamp: Date.now() });
 }
 
-async function fetchFromPiped(videoId: string, instance: string): Promise<string | null> {
+async function fastFetch(url: string, timeout = 3500): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
+  const id = setTimeout(() => controller.abort(), timeout);
   try {
-    const res = await fetch(`${instance}/streams/${videoId}`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) return null;
-    const data = await res.json();
-
-    const streams = (data.audioStreams || [])
-      .filter((s: any) => s.url && s.mimeType?.startsWith('audio/'))
-      .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-    // Preferir formato compatible con más navegadores (mp4/m4a sobre webm)
-    const mp4Stream = streams.find((s: any) =>
-      s.mimeType?.includes('mp4') || s.mimeType?.includes('m4a')
-    );
-
-    return mp4Stream?.url || streams[0]?.url || null;
-  } catch {
-    clearTimeout(timeout);
-    return null;
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(id);
+    return response;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
   }
 }
 
-async function fetchFromInvidious(videoId: string, instance: string): Promise<string | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+async function fetchStream(videoId: string, instance: string, type: 'piped' | 'invidious'): Promise<string> {
+  const url = type === 'piped'
+    ? `${instance}/streams/${videoId}`
+    : `${instance}/api/v1/videos/${videoId}`;
 
-  try {
-    const res = await fetch(`${instance}/api/v1/videos/${videoId}`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+  const res = await fastFetch(url);
+  if (!res.ok) throw new Error('Status not ok');
 
-    if (!res.ok) return null;
-    const data = await res.json();
+  const data = await res.json();
+  let streams = [];
 
-    const streams = (data.adaptiveFormats || [])
-      .filter((s: any) => s.type?.startsWith('audio/'))
-      .sort((a: any, b: any) => (parseInt(b.bitrate) || 0) - (parseInt(a.bitrate) || 0));
-
-    const mp4Stream = streams.find((s: any) =>
-      s.type?.includes('mp4') || s.type?.includes('m4a')
-    );
-
-    return mp4Stream?.url || streams[0]?.url || null;
-  } catch {
-    clearTimeout(timeout);
-    return null;
+  if (type === 'piped') {
+    streams = (data.audioStreams || []).filter((s: any) => s.url && s.mimeType?.startsWith('audio/'));
+  } else {
+    streams = (data.adaptiveFormats || []).filter((s: any) => s.type?.startsWith('audio/'));
   }
+
+  const mp4 = streams.find((s: any) => (s.mimeType || s.type)?.includes('mp4') || (s.mimeType || s.type)?.includes('m4a'));
+  const selected = mp4 || streams[0];
+
+  if (!selected?.url) throw new Error('No stream found');
+  return selected.url;
 }
 
-/**
- * Obtiene una URL de audio directa para un video de YouTube.
- * Intenta múltiples instancias de Piped e Invidious como fallback.
- * Retorna null si todos los intentos fallan.
- */
 export async function getAudioUrl(videoId: string): Promise<string | null> {
-  // Verificar cache
   const cached = getCachedUrl(videoId);
   if (cached) return cached;
 
-  // Intentar instancias de Piped primero (generalmente más rápidas)
-  for (const instance of PIPED_INSTANCES) {
-    try {
-      const url = await fetchFromPiped(videoId, instance);
-      if (url) {
-        setCachedUrl(videoId, url);
-        return url;
-      }
-    } catch {
-      continue;
-    }
-  }
+  const shuffle = (arr: string[]) => [...arr].sort(() => 0.5 - Math.random());
 
-  // Intentar instancias de Invidious como fallback
-  for (const instance of INVIDIOUS_INSTANCES) {
-    try {
-      const url = await fetchFromInvidious(videoId, instance);
-      if (url) {
-        setCachedUrl(videoId, url);
-        return url;
-      }
-    } catch {
-      continue;
+  const candidates = [
+    ...shuffle(PIPED_INSTANCES).slice(0, 2).map(url => ({ url, type: 'piped' as const })),
+    ...shuffle(INVIDIOUS_INSTANCES).slice(0, 1).map(url => ({ url, type: 'invidious' as const }))
+  ];
+
+  try {
+    const url = await Promise.any(
+      candidates.map(c => fetchStream(videoId, c.url, c.type))
+    );
+
+    if (url) {
+      setCachedUrl(videoId, url);
+      return url;
     }
+  } catch (e) {
+    console.warn('Todos los proxies fallaron o timeout', e);
   }
 
   return null;
 }
 
-/**
- * Limpia entradas del cache. Sin argumento limpia todo.
- */
 export function clearAudioCache(videoId?: string) {
   if (videoId) audioCache.delete(videoId);
   else audioCache.clear();

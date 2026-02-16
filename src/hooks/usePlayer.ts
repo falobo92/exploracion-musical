@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { MusicMix } from '@/types';
 import { searchVideoWithKey } from '@/services/youtube';
 
@@ -18,7 +18,7 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
 
   const currentMix = currentIndex >= 0 ? mixes[currentIndex] ?? null : null;
 
-  // Buscar video cuando cambia el track actual
+  // Cargar y reproducir la canción actual
   useEffect(() => {
     if (currentIndex === -1) return;
     const mix = mixes[currentIndex];
@@ -31,7 +31,7 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
     }
 
     if (!googleKey) {
-      notify('Configura tu clave de Google en Ajustes para reproducir.', 'error');
+      notify('Falta API Key de Google.', 'error');
       openSettings();
       setIsPlaying(false);
       return;
@@ -45,19 +45,48 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
           onMixesUpdate(prev =>
             prev.map((m, i) => (i === currentIndex ? { ...m, videoId: foundId } : m))
           );
-          update(toastId, `${mix.artist} — ${mix.style}`, 'success', 2000);
+          update(toastId, `Reproduciendo: ${mix.artist}`, 'success', 2000);
           setIsPlaying(true);
           updateMediaSession(mix);
         } else {
-          update(toastId, `No se encontró video para ${mix.artist}`, 'error');
+          update(toastId, `No encontrado: ${mix.artist}`, 'error');
           handleNext();
         }
       })
       .catch(() => {
-        update(toastId, 'Error buscando video. Verifica tu clave API.', 'error');
+        update(toastId, 'Error en búsqueda.', 'error');
         setIsPlaying(false);
       });
   }, [currentIndex, googleKey]);
+
+  // Pre-carga (Prefetch) de la siguiente canción
+  useEffect(() => {
+    if (currentIndex === -1 || !googleKey) return;
+
+    let nextIndex = -1;
+    if (shuffle) {
+      const unbuffered = mixes.findIndex((m, i) => !m.videoId && i !== currentIndex);
+      if (unbuffered !== -1) nextIndex = unbuffered;
+    } else if (currentIndex < mixes.length - 1) {
+      nextIndex = currentIndex + 1;
+    }
+
+    if (nextIndex !== -1) {
+      const nextMix = mixes[nextIndex];
+      if (nextMix && !nextMix.videoId) {
+        console.log(`[Prefetch] Buscando en segundo plano: ${nextMix.artist}`);
+        searchVideoWithKey(nextMix.searchQuery, googleKey)
+          .then(foundId => {
+            if (foundId) {
+              onMixesUpdate(prev =>
+                prev.map((m, i) => (i === nextIndex ? { ...m, videoId: foundId } : m))
+              );
+            }
+          })
+          .catch(() => console.warn('[Prefetch] Falló búsqueda silenciosa'));
+      }
+    }
+  }, [currentIndex, googleKey, mixes, shuffle]);
 
   const handleNext = useCallback(() => {
     setCurrentIndex(prev => {
@@ -118,20 +147,14 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
   };
 }
 
-// Media Session API para controles en lock screen / notificaciones
 function updateMediaSession(mix: MusicMix) {
   if (!('mediaSession' in navigator)) return;
-
   navigator.mediaSession.metadata = new MediaMetadata({
     title: mix.artist,
-    artist: `${mix.style} — ${mix.country}`,
-    album: 'Atlas Sónico',
+    artist: mix.style,
+    album: mix.country,
     artwork: [
-      {
-        src: `https://img.youtube.com/vi/${mix.videoId}/mqdefault.jpg`,
-        sizes: '320x180',
-        type: 'image/jpeg',
-      },
+      { src: `https://img.youtube.com/vi/${mix.videoId}/mqdefault.jpg`, sizes: '320x180', type: 'image/jpeg' },
     ],
   });
 }

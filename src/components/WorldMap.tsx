@@ -11,17 +11,22 @@ interface WorldMapProps {
   className?: string;
 }
 
+const NOTE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6Z"/></svg>`;
+
 function createMarkerIcon(color: string, isSelected: boolean): L.DivIcon {
-  const size = isSelected ? 22 : 16;
+  const size = isSelected ? 40 : 32;
 
   return L.divIcon({
     className: '',
-    iconSize: [size + 20, size + 20],
-    iconAnchor: [(size + 20) / 2, (size + 20) / 2],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2) - 4],
     html: `
-      <div class="map-marker" style="width:${size + 20}px;height:${size + 20}px;--marker-color:${color}">
+      <div class="map-marker ${isSelected ? 'map-marker--selected' : ''}" style="width:${size}px;height:${size}px;--marker-color:${color}">
         ${isSelected ? `<div class="map-marker-pulse" style="--marker-color:${color}"></div>` : ''}
-        <div class="map-marker-dot ${isSelected ? 'selected' : ''}" style="background:${color};--marker-color:${color}"></div>
+        <div class="map-marker-circle ${isSelected ? 'selected' : ''}" style="--marker-color:${color}">
+          <span class="map-marker-icon" style="color:${color}">${NOTE_SVG}</span>
+        </div>
       </div>
     `,
   });
@@ -31,7 +36,10 @@ const FlyToSelected: React.FC<{ mix: MusicMix | null }> = ({ mix }) => {
   const map = useMap();
   React.useEffect(() => {
     if (mix) {
-      map.flyTo([mix.coordinates.lat, mix.coordinates.lng], 5, { duration: 0.8 });
+      map.flyTo([mix.coordinates.lat, mix.coordinates.lng], 5, {
+        duration: 1.2,
+        easeLinearity: 0.25,
+      });
     }
   }, [mix, map]);
   return null;
@@ -56,34 +64,26 @@ const MixMarkerComponent: React.FC<{
       zIndexOffset={isSelected ? 1000 : 0}
     >
       <Popup>
-        <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 200, padding: '4px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <div style={{
-              width: 8, height: 8, borderRadius: '50%',
+        <div className="map-popup-card">
+          <div className="map-popup-header">
+            <div className="map-popup-dot" style={{
               background: style.markerColor,
               boxShadow: `0 0 8px ${style.markerColor}`,
-              flexShrink: 0,
             }} />
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#f4f4f5' }}>
-              {mix.artist}
-            </div>
+            <div className="map-popup-artist">{mix.artist}</div>
           </div>
-          <div style={{ fontSize: 12, color: '#818cf8', fontWeight: 600, marginBottom: 6, letterSpacing: '0.02em' }}>
-            {mix.style}
-          </div>
-          <div style={{
-            display: 'flex', gap: 6, fontSize: 11, color: '#a1a1aa',
-            borderTop: '1px solid rgba(63,63,70,0.4)', paddingTop: 6,
-          }}>
+          {mix.songTitle && (
+            <div className="map-popup-song">{mix.songTitle}</div>
+          )}
+          <div className="map-popup-style">{mix.style}</div>
+          <div className="map-popup-meta">
             <span>{mix.country}</span>
-            <span style={{ color: '#3f3f46' }}>·</span>
+            <span className="map-popup-sep">&middot;</span>
             <span>{mix.year}</span>
-            <span style={{ color: '#3f3f46' }}>·</span>
+            <span className="map-popup-sep">&middot;</span>
             <span>{mix.bpm} BPM</span>
           </div>
-          <div style={{ fontSize: 11, color: '#71717a', marginTop: 8, lineHeight: 1.5 }}>
-            {mix.description}
-          </div>
+          <div className="map-popup-desc">{mix.description}</div>
         </div>
       </Popup>
     </Marker>
@@ -99,7 +99,7 @@ export const WorldMap: React.FC<WorldMapProps> = ({ mixes, onSelect, selectedId,
   );
 
   return (
-    <div className={className || "w-full h-[300px] sm:h-[420px] rounded-2xl overflow-hidden border border-zinc-800/40 shadow-2xl shadow-black/20 mb-6 relative z-0"}>
+    <div className={className || "map-container-wrapper"}>
       <MapContainer
         center={[20, 0]}
         zoom={2}
@@ -110,11 +110,6 @@ export const WorldMap: React.FC<WorldMapProps> = ({ mixes, onSelect, selectedId,
         attributionControl={true}
         zoomControl={true}
       >
-        {/*
-          Tiles oscuros con etiquetas en español.
-          Usamos la capa de OpenStreetMap con renderizado CARTO oscuro
-          y forzamos idioma español mediante la URL de tiles con parámetro de idioma.
-        */}
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"

@@ -40,27 +40,45 @@ export function useMixes() {
     songCount: 15,
   });
 
-  // Filtrado local sobre mixes existentes
   const filteredMixes = useMemo(() => {
-    return mixes.filter(mix => {
-      if (criteria.continent && !mix.continent.toLowerCase().includes(criteria.continent.toLowerCase())) {
-        return false;
+    return mixes.filter((mix) => {
+      // Continente: comparación normalizada (sin acentos)
+      if (criteria.continent) {
+        const norm = (s: string) =>
+          s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        if (norm(mix.continent) !== norm(criteria.continent)) return false;
       }
-      if (criteria.country && !mix.country.toLowerCase().includes(criteria.country.toLowerCase())) {
-        return false;
+
+      // País: búsqueda parcial normalizada
+      if (criteria.country) {
+        const norm = (s: string) =>
+          s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        if (!norm(mix.country).includes(norm(criteria.country))) return false;
       }
-      if (criteria.style && !mix.style.toLowerCase().includes(criteria.style.toLowerCase())) {
-        return false;
+
+      // Estilo: búsqueda parcial case-insensitive
+      if (criteria.style) {
+        if (!mix.style.toLowerCase().includes(criteria.style.toLowerCase())) return false;
       }
-      if (criteria.year && !mix.year.toLowerCase().includes(criteria.year.toLowerCase())) {
-        return false;
-      }
-      if (criteria.bpm) {
-        const targetBpm = parseInt(criteria.bpm, 10);
-        if (!isNaN(targetBpm) && Math.abs(mix.bpm - targetBpm) > 20) {
-          return false;
+
+      // Década: ej. criteria.year = "1980s" → rango 1980-1989
+      if (criteria.year) {
+        const decadeMatch = criteria.year.match(/^(\d{4})/);
+        if (decadeMatch) {
+          const decadeStart = parseInt(decadeMatch[1], 10);
+          const mixYear = parseInt(mix.year, 10);
+          if (!isNaN(mixYear) && (mixYear < decadeStart || mixYear > decadeStart + 9)) return false;
         }
       }
+
+      // BPM: rango ej. criteria.bpm = "90-120"
+      if (criteria.bpm) {
+        const parts = criteria.bpm.split('-').map(Number);
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+          if (mix.bpm < parts[0] || mix.bpm > parts[1]) return false;
+        }
+      }
+
       return true;
     });
   }, [mixes, criteria]);

@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { SearchCriteria } from '@/types';
-import { CONTINENT_OPTIONS } from '@/constants/continents';
+import { CONTINENT_OPTIONS, DECADE_OPTIONS, BPM_RANGE_OPTIONS } from '@/constants/continents';
 import { COUNTRIES_BY_CONTINENT } from '@/constants/countries';
 import { SUGGESTED_STYLES } from '@/constants/styles';
 import { Spinner } from './icons/Spinner';
@@ -24,24 +24,176 @@ interface FilterBarProps {
 
 const SONG_COUNT_OPTIONS = [5, 10, 15, 20, 25, 30];
 
-/** Selector de país con dropdown por continente + escritura manual */
+/* ─── Estilos compartidos para TODOS los dropdowns ────────────────── */
+
+const ddBtnBase =
+  'bg-zinc-950/80 border border-zinc-800/50 text-sm rounded-xl focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 block w-full p-2.5 transition-all hover:border-zinc-700/60';
+
+const ddPanel =
+  'absolute top-full left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto bg-zinc-900/95 border border-zinc-700/50 rounded-xl shadow-2xl shadow-black/40 backdrop-blur-xl scrollbar-thin';
+
+const ddItem = (active: boolean) =>
+  `w-full text-left px-3 py-2 text-sm transition-colors ${
+    active
+      ? 'bg-indigo-500/15 text-indigo-300 font-medium'
+      : 'text-zinc-300 hover:bg-indigo-500/10 hover:text-white'
+  }`;
+
+const ddClearBtn =
+  'w-full text-left px-3 py-2 text-xs text-zinc-500 hover:bg-zinc-800/70 hover:text-zinc-300 border-b border-zinc-800/40 transition-colors';
+
+const Chevron: React.FC<{ open: boolean }> = ({ open }) => (
+  <svg
+    className={`w-3.5 h-3.5 text-zinc-500 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    viewBox="0 0 24 24"
+  >
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+  </svg>
+);
+
+/* ─── Hook: cerrar al hacer clic fuera ────────────────────────────── */
+
+function useClickOutside(
+  ref: React.RefObject<HTMLElement | null>,
+  close: () => void,
+) {
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [ref, close]);
+}
+
+/* ─── DropdownSelect: continente, década, BPM ─────────────────────── */
+
+const DropdownSelect: React.FC<{
+  value: string;
+  options: { value: string; label: string }[];
+  onSelect: (v: string) => void;
+  ariaLabel: string;
+}> = ({ value, options, onSelect, ariaLabel }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useClickOutside(ref, close);
+
+  const label = options.find(o => o.value === value)?.label ?? '';
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={ddBtnBase + ' flex items-center justify-between gap-1 cursor-pointer'}
+        aria-label={ariaLabel}
+      >
+        <span className={`truncate ${value ? 'text-white' : 'text-zinc-500'}`}>
+          {label}
+        </span>
+        <Chevron open={open} />
+      </button>
+
+      {open && (
+        <div className={ddPanel}>
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { onSelect(opt.value); setOpen(false); }}
+              className={ddItem(opt.value === value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── SearchableDropdown: estilo musical ──────────────────────────── */
+
+const SearchableDropdown: React.FC<{
+  value: string;
+  suggestions: string[];
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onSelect: (v: string) => void;
+  placeholder: string;
+  name: string;
+}> = ({ value, suggestions, onChange, onSelect, placeholder, name }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useClickOutside(ref, close);
+
+  const filterText = value.toLowerCase();
+  const filtered = suggestions.filter(
+    s => !filterText || s.toLowerCase().includes(filterText),
+  );
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex">
+        <input
+          type="text"
+          name={name}
+          placeholder={placeholder}
+          value={value}
+          onChange={onChange}
+          onFocus={() => setOpen(true)}
+          className={ddBtnBase + ' text-white placeholder:text-zinc-600 !rounded-r-none border-r-0'}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="bg-zinc-950/80 border border-zinc-800/50 border-l-0 rounded-r-xl px-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors shrink-0"
+          aria-label={`Abrir lista de ${name}`}
+        >
+          <Chevron open={open} />
+        </button>
+      </div>
+
+      {open && filtered.length > 0 && (
+        <div className={ddPanel}>
+          {value && (
+            <button
+              onClick={() => { onSelect(''); setOpen(false); }}
+              className={ddClearBtn}
+            >
+              Limpiar selección
+            </button>
+          )}
+          {filtered.map(s => (
+            <button
+              key={s}
+              onClick={() => { onSelect(s); setOpen(false); }}
+              className={ddItem(s === value)}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── CountrySelector: dropdown agrupado por continente ───────────── */
+
 const CountrySelector: React.FC<{
   value: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSelect: (country: string) => void;
-  inputClass: string;
-}> = ({ value, onChange, onSelect, inputClass }) => {
+}> = ({ value, onChange, onSelect }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  // Cerrar al hacer click fuera
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  const close = useCallback(() => setOpen(false), []);
+  useClickOutside(ref, close);
 
   const filterText = value.toLowerCase();
 
@@ -55,36 +207,33 @@ const CountrySelector: React.FC<{
           value={value}
           onChange={onChange}
           onFocus={() => setOpen(true)}
-          className={inputClass + ' !rounded-r-none border-r-0'}
+          className={ddBtnBase + ' text-white placeholder:text-zinc-600 !rounded-r-none border-r-0'}
           autoComplete="off"
         />
         <button
           type="button"
-          onClick={() => setOpen(!open)}
+          onClick={() => setOpen(o => !o)}
           className="bg-zinc-950/80 border border-zinc-800/50 border-l-0 rounded-r-xl px-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors shrink-0"
           aria-label="Abrir lista de países"
         >
-          <svg className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
+          <Chevron open={open} />
         </button>
       </div>
 
       {open && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-64 overflow-y-auto bg-zinc-900/95 border border-zinc-700/50 rounded-xl shadow-2xl shadow-black/40 backdrop-blur-xl">
-          {/* Opción para limpiar */}
+        <div className={ddPanel}>
           {value && (
             <button
               onClick={() => { onSelect(''); setOpen(false); }}
-              className="w-full text-left px-3 py-2 text-xs text-zinc-500 hover:bg-zinc-800/70 hover:text-zinc-300 border-b border-zinc-800/40"
+              className={ddClearBtn}
             >
               Limpiar selección
             </button>
           )}
 
           {Object.entries(COUNTRIES_BY_CONTINENT).map(([continent, countries]) => {
-            const filtered = countries.filter(c =>
-              !filterText || c.toLowerCase().includes(filterText)
+            const filtered = countries.filter(
+              c => !filterText || c.toLowerCase().includes(filterText),
             );
             if (filtered.length === 0) return null;
             return (
@@ -97,7 +246,7 @@ const CountrySelector: React.FC<{
                   <button
                     key={country}
                     onClick={() => { onSelect(country); setOpen(false); }}
-                    className="w-full text-left px-4 py-1.5 text-sm text-zinc-300 hover:bg-indigo-500/10 hover:text-white transition-colors"
+                    className={ddItem(country === value)}
                   >
                     {country}
                   </button>
@@ -110,6 +259,10 @@ const CountrySelector: React.FC<{
     </div>
   );
 };
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  FilterBar principal                                              */
+/* ═══════════════════════════════════════════════════════════════════ */
 
 export const FilterBar: React.FC<FilterBarProps> = ({
   criteria,
@@ -131,7 +284,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     'bg-zinc-950/80 border border-zinc-800/50 text-white text-sm rounded-xl focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 block w-full p-2.5 placeholder:text-zinc-600 transition-all hover:border-zinc-700/60';
 
   return (
-    <section className="mb-4 bg-zinc-900/30 p-4 sm:p-5 rounded-2xl border border-zinc-800/30 backdrop-blur-sm">
+    <section className="mb-4 bg-zinc-900/30 p-4 sm:p-5 rounded-2xl border border-zinc-800/30 backdrop-blur-sm relative z-10">
       {/* Encabezado */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
@@ -160,62 +313,42 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         />
       </div>
 
-      {/* Filtros clásicos */}
+      {/* Filtros clásicos — todos con dropdown custom unificado */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-        <select
-          name="continent"
+        <DropdownSelect
           value={criteria.continent}
-          onChange={onChange}
-          aria-label="Seleccionar continente"
-          className={inputClass}
-        >
-          {CONTINENT_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          options={CONTINENT_OPTIONS}
+          onSelect={v => onUpdateCriteria({ continent: v })}
+          ariaLabel="Seleccionar continente"
+        />
 
         <CountrySelector
           value={criteria.country}
           onChange={onChange}
-          onSelect={(country) => onUpdateCriteria({ country })}
-          inputClass={inputClass}
+          onSelect={country => onUpdateCriteria({ country })}
         />
 
-        <div>
-          <input
-            type="text"
-            name="style"
-            list="style-suggestions"
-            placeholder="Estilo..."
-            value={criteria.style}
-            onChange={onChange}
-            className={inputClass}
-          />
-          <datalist id="style-suggestions">
-            {SUGGESTED_STYLES.map(style => (
-              <option key={style} value={style} />
-            ))}
-          </datalist>
-        </div>
+        <SearchableDropdown
+          value={criteria.style}
+          suggestions={SUGGESTED_STYLES}
+          onChange={onChange}
+          onSelect={v => onUpdateCriteria({ style: v })}
+          placeholder="Estilo..."
+          name="style"
+        />
 
-        <input
-          type="text"
-          name="year"
-          placeholder="Década..."
+        <DropdownSelect
           value={criteria.year}
-          onChange={onChange}
-          className={inputClass}
+          options={DECADE_OPTIONS}
+          onSelect={v => onUpdateCriteria({ year: v })}
+          ariaLabel="Seleccionar década"
         />
 
-        <input
-          type="number"
-          name="bpm"
-          placeholder="BPM..."
+        <DropdownSelect
           value={criteria.bpm}
-          onChange={onChange}
-          className={inputClass}
+          options={BPM_RANGE_OPTIONS}
+          onSelect={v => onUpdateCriteria({ bpm: v })}
+          ariaLabel="Seleccionar rango de BPM"
         />
       </div>
 

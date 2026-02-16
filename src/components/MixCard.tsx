@@ -13,6 +13,10 @@ interface MixCardProps {
 export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlaying, isCurrent, index }) => {
   const style = getContinentStyle(mix.continent);
 
+  const ytMusicUrl = mix.videoId
+    ? `https://music.youtube.com/watch?v=${mix.videoId}`
+    : `https://music.youtube.com/search?q=${encodeURIComponent(mix.searchQuery)}`;
+
   return (
     <div
       className={`animate-card-enter relative rounded-xl flex flex-col justify-between h-full transition-all duration-200 group cursor-pointer overflow-hidden ${
@@ -23,6 +27,25 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={() => onPlay(mix)}
     >
+      {/* Botón YouTube Music */}
+      <a
+        href={ytMusicUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-red-600/90 rounded-full text-white transition-all transform hover:scale-110 z-20 group/yt"
+        title="Abrir en YouTube Music"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          className="w-4 h-4"
+        >
+          <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm0-18c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8zm0 11c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z" />
+          <path d="M10 15l5-3-5-3v6z" />
+        </svg>
+      </a>
+
       {/* Accent strip lateral */}
       <div
         className="card-accent"
@@ -61,7 +84,7 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
         </div>
 
         {/* Artista */}
-        <div className="flex items-center gap-2 mb-1.5">
+        <div className="flex items-center gap-2 mb-0.5">
           <h3
             className={`text-lg font-bold transition-colors leading-tight ${
               isCurrent ? 'text-indigo-300' : 'text-white group-hover:text-indigo-200'
@@ -78,6 +101,11 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
             </div>
           )}
         </div>
+
+        {/* Canción */}
+        {mix.songTitle && (
+          <p className="text-indigo-300/70 text-sm italic mb-1.5 truncate">{mix.songTitle}</p>
+        )}
 
         {/* Style + BPM */}
         <div className="text-zinc-500 text-xs font-mono mb-2.5 flex items-center gap-1.5">

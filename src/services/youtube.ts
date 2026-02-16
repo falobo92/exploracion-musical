@@ -2,8 +2,11 @@ const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 const SEARCH_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 2;
 
-// Cache de búsquedas para evitar llamadas repetidas
+// Cache de búsquedas para evitar llamadas repetidas.
+// Los fallos (null) se guardan con TTL para reintentar tras 5 min.
 const searchCache = new Map<string, string | null>();
+const failTTL = new Map<string, number>();
+const FAIL_TTL_MS = 5 * 60 * 1000;
 
 class YouTubeError extends Error {
   constructor(
@@ -53,18 +56,25 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
  */
 export async function searchVideoWithKey(query: string, apiKey: string): Promise<string | null> {
   const cacheKey = query.toLowerCase().trim();
+
   if (searchCache.has(cacheKey)) {
-    return searchCache.get(cacheKey) ?? null;
+    const cached = searchCache.get(cacheKey);
+    if (cached !== null) return cached;
+    // Si es un fallo cacheado, comprobar TTL
+    const expiry = failTTL.get(cacheKey) ?? 0;
+    if (Date.now() < expiry) return null;
+    // TTL expirado, reintentar
+    searchCache.delete(cacheKey);
+    failTTL.delete(cacheKey);
   }
 
   return withRetry(async () => {
     try {
-      // videoCategoryId=10 = Música — limita los resultados a videos musicales
-      const url = `${YOUTUBE_API_BASE}/search?part=id&q=${encodeURIComponent(query)}&maxResults=1&type=video&videoCategoryId=10&key=${apiKey}`;
+      // Sin videoCategoryId para no filtrar videos musicales válidos; maxResults=3 para mejor selección
+      const url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(query)}&maxResults=3&type=video&key=${apiKey}`;
       const response = await fetchWithTimeout(url);
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
         if (response.status === 403 || response.status === 401) {
           throw new YouTubeError('Clave de API inválida o sin permisos.', 'AUTH', response.status);
         }
@@ -72,13 +82,43 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
           throw new YouTubeError(`Error ${response.status}`, 'QUOTA', response.status);
         }
         searchCache.set(cacheKey, null);
+        failTTL.set(cacheKey, Date.now() + FAIL_TTL_MS);
         return null;
       }
 
       const data = await response.json();
-      const videoId = data.items?.[0]?.id?.videoId ?? null;
-      searchCache.set(cacheKey, videoId);
-      return videoId;
+      const items = data.items ?? [];
+
+      // Seleccionar el mejor resultado: priorizar los que contengan palabras del query en el título
+      const queryWords = query.toLowerCase().split(/[\s\-–]+/).filter(w => w.length > 2);
+      let bestId: string | null = null;
+      let bestScore = -1;
+
+      for (const item of items) {
+        const videoId = item.id?.videoId;
+        if (!videoId) continue;
+
+        const title = (item.snippet?.title ?? '').toLowerCase();
+        const score = queryWords.reduce((s: number, w: string) => s + (title.includes(w) ? 1 : 0), 0);
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestId = videoId;
+        }
+      }
+
+      // Si ninguno coincide, tomar el primero disponible
+      if (!bestId && items.length > 0) {
+        bestId = items[0].id?.videoId ?? null;
+      }
+
+      if (bestId) {
+        searchCache.set(cacheKey, bestId);
+      } else {
+        searchCache.set(cacheKey, null);
+        failTTL.set(cacheKey, Date.now() + FAIL_TTL_MS);
+      }
+      return bestId;
     } catch (error: any) {
       if (error instanceof YouTubeError) throw error;
       if (error.name === 'AbortError') {
@@ -219,4 +259,5 @@ export async function addVideoToPlaylist(
 /** Limpia la caché de búsquedas */
 export function clearSearchCache() {
   searchCache.clear();
+  failTTL.clear();
 }
