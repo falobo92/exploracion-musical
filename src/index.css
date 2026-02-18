@@ -107,7 +107,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: marker-bounce-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: marker-bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 @keyframes marker-bounce-in {
@@ -115,9 +115,12 @@ body {
     transform: scale(0) translateY(-10px);
     opacity: 0;
   }
-  60% {
-    transform: scale(1.15) translateY(2px);
+  50% {
+    transform: scale(1.2) translateY(2px);
     opacity: 1;
+  }
+  70% {
+    transform: scale(0.95) translateY(-1px);
   }
   100% {
     transform: scale(1) translateY(0);
@@ -129,56 +132,120 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(24, 24, 27, 0.92);
-  border: 2.5px solid var(--marker-color, #6366f1);
+  background: rgba(15, 15, 20, 0.92);
+  border: 2px solid var(--marker-color, #6366f1);
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow:
-    0 0 10px color-mix(in srgb, var(--marker-color, #6366f1) 50%, transparent),
-    0 0 24px color-mix(in srgb, var(--marker-color, #6366f1) 25%, transparent);
+    0 0 8px color-mix(in srgb, var(--marker-color, #6366f1) 40%, transparent),
+    0 0 20px color-mix(in srgb, var(--marker-color, #6366f1) 15%, transparent);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
 }
 .map-marker-circle:hover {
-  transform: scale(1.15);
+  transform: scale(1.2);
+  background: rgba(15, 15, 20, 0.97);
   box-shadow:
-    0 0 14px color-mix(in srgb, var(--marker-color, #6366f1) 70%, transparent),
-    0 0 32px color-mix(in srgb, var(--marker-color, #6366f1) 35%, transparent);
-}
-.map-marker-circle.selected {
-  width: 34px;
-  height: 34px;
-  border-width: 3px;
-  background: rgba(24, 24, 27, 0.95);
-  box-shadow:
-    0 0 16px color-mix(in srgb, var(--marker-color, #6366f1) 70%, transparent),
-    0 0 40px color-mix(in srgb, var(--marker-color, #6366f1) 40%, transparent);
+    0 0 12px color-mix(in srgb, var(--marker-color, #6366f1) 60%, transparent),
+    0 0 28px color-mix(in srgb, var(--marker-color, #6366f1) 30%, transparent);
 }
 
+.map-marker-circle.selected {
+  width: 38px;
+  height: 38px;
+  border-width: 2.5px;
+  background: rgba(15, 15, 20, 0.95);
+  animation: marker-glow-breathe 2.5s ease-in-out infinite;
+}
+
+@keyframes marker-glow-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 12px color-mix(in srgb, var(--marker-color, #6366f1) 60%, transparent),
+      0 0 30px color-mix(in srgb, var(--marker-color, #6366f1) 30%, transparent),
+      inset 0 0 8px color-mix(in srgb, var(--marker-color, #6366f1) 10%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 20px color-mix(in srgb, var(--marker-color, #6366f1) 80%, transparent),
+      0 0 50px color-mix(in srgb, var(--marker-color, #6366f1) 40%, transparent),
+      inset 0 0 14px color-mix(in srgb, var(--marker-color, #6366f1) 20%, transparent);
+  }
+}
+
+/* Marker icon (note) */
 .map-marker-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 0 4px currentColor);
+  filter: drop-shadow(0 0 3px currentColor);
+  transition: filter 0.3s;
 }
-.map-marker-circle.selected .map-marker-icon {
+.map-marker-circle:hover .map-marker-icon {
   filter: drop-shadow(0 0 6px currentColor);
 }
 
+/* Equalizer bars inside selected marker */
+.marker-eq {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2.5px;
+  height: 16px;
+  padding: 0 2px;
+}
+.marker-eq-bar {
+  display: block;
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--marker-color, #6366f1);
+  height: var(--bar-h, 50%);
+  animation: marker-eq-bounce var(--bar-s, 0.5s) ease-in-out infinite alternate;
+  animation-delay: var(--bar-d, 0s);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--marker-color, #6366f1) 50%, transparent);
+}
+
+@keyframes marker-eq-bounce {
+  0% { height: 20%; opacity: 0.6; }
+  100% { height: var(--bar-h, 100%); opacity: 1; }
+}
+
+/* Pulse rings */
 .map-marker-pulse {
   position: absolute;
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  border: 2px solid var(--marker-color, #6366f1);
-  background: transparent;
+  border: 1.5px solid var(--marker-color, #6366f1);
+  background: color-mix(in srgb, var(--marker-color, #6366f1) 5%, transparent);
   opacity: 0;
-  animation: marker-pulse 2s ease-out infinite;
+  animation: marker-pulse 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
+.map-marker-pulse--delayed {
+  animation-delay: 1.25s;
+  width: 48px;
+  height: 48px;
+}
+
 @keyframes marker-pulse {
-  0% { transform: scale(0.5); opacity: 0.6; }
-  100% { transform: scale(1.8); opacity: 0; }
+  0% { transform: scale(0.6); opacity: 0.7; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Rotating ring around selected marker */
+.map-marker-ring {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1.5px dashed color-mix(in srgb, var(--marker-color, #6366f1) 40%, transparent);
+  animation: marker-ring-spin 8s linear infinite;
+}
+
+@keyframes marker-ring-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* ================= MAP POPUP CARD ================= */
@@ -235,6 +302,52 @@ body {
   color: #71717a;
   margin-top: 8px;
   line-height: 1.5;
+}
+
+/* Popup action buttons */
+.map-popup-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(63, 63, 70, 0.4);
+}
+.map-popup-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  line-height: 1;
+}
+.map-popup-btn--play {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border-color: rgba(99, 102, 241, 0.25);
+}
+.map-popup-btn--play:hover {
+  background: rgba(99, 102, 241, 0.3);
+  color: #c7d2fe;
+  border-color: rgba(99, 102, 241, 0.4);
+}
+.map-popup-btn--yt {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+.map-popup-btn--yt:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 /* ================= PLAYER ================= */
@@ -313,6 +426,85 @@ body {
 }
 .toast-enter { animation: toast-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 .toast-exit { animation: toast-out 0.2s ease-in forwards; }
+
+/* ================= SIDEBAR PANEL ANIMATION ================= */
+
+/*
+ * Mobile: animación de altura usando el truco grid-template-rows.
+ * Es el único método CSS puro que anima "height: auto → 0" de forma fluida,
+ * ya que max-height no puede animar desde un valor fijo al tamaño real del contenido.
+ */
+.sidebar-panel {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 380ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-panel--closed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+/* El hijo directo necesita overflow:hidden y min-height:0 para el truco */
+.sidebar-panel__body {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Desktop: animar width — contenido alineado a la derecha para reveal RTL */
+@media (min-width: 1024px) {
+  .sidebar-panel {
+    display: block;
+    overflow: hidden;
+    width: 38%;
+    flex-shrink: 0;
+    transition: width 380ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .sidebar-panel--closed {
+    width: 0;
+  }
+  .sidebar-panel__body {
+    overflow: visible;
+    min-height: unset;
+    /*
+     * float:right + min-width fija = el contenido se ancla al borde DERECHO
+     * del contenedor. Al crecer width de 0→38%, se revela de derecha a izquierda.
+     */
+    float: right;
+    min-width: 32vw;
+    width: 100%;
+    opacity: 1;
+    transition: opacity 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .sidebar-panel--closed .sidebar-panel__body {
+    opacity: 0;
+  }
+}
+@media (min-width: 1280px) {
+  .sidebar-panel:not(.sidebar-panel--closed) {
+    width: 34%;
+  }
+  .sidebar-panel__body {
+    min-width: 28vw;
+  }
+}
+
+/* Botón toggle — pulso sutil al hacer click */
+.sidebar-toggle-btn {
+  transition: background-color 150ms ease, border-color 150ms ease,
+              color 150ms ease, transform 120ms ease;
+}
+.sidebar-toggle-btn:active {
+  transform: scale(0.92);
+}
+.sidebar-toggle-btn__icon {
+  transition: transform 380ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-toggle-btn__icon--closed {
+  transform: rotate(180deg);
+}
 
 /* ================= HEADER GRADIENT ================= */
 @keyframes gradient-shift {

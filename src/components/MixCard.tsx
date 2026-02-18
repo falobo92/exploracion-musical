@@ -27,21 +27,17 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={() => onPlay(mix)}
     >
-      {/* Botón YouTube Music */}
+      {/* Botón YouTube Music — visible al hacer hover */}
       <a
         href={ytMusicUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-red-600/90 rounded-full text-white transition-all transform hover:scale-110 z-20 group/yt"
+        className="absolute top-2.5 right-2.5 p-1.5 bg-black/70 hover:bg-red-600/90 rounded-lg text-white/70 hover:text-white transition-all opacity-0 group-hover:opacity-100 z-20"
         title="Abrir en YouTube Music"
         onClick={(e) => e.stopPropagation()}
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          className="w-4 h-4"
-        >
-          <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm0-18c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8zm0 11c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z" />
+        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+          <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm0-18c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8z" />
           <path d="M10 15l5-3-5-3v6z" />
         </svg>
       </a>

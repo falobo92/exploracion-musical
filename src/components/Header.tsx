@@ -7,12 +7,12 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenSettings, hasGemini, hasGoogle }) => (
-  <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-2xl border-b border-zinc-800/30">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
+  <header className="fixed top-0 left-0 right-0 z-40 bg-zinc-950/80 backdrop-blur-2xl border-b border-zinc-800/30">
+    <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-2 sm:py-2.5 flex justify-between items-center">
       <div className="flex items-center gap-3">
         {/* Logo con gradiente animado */}
-        <div className="w-10 h-10 rounded-xl header-gradient flex items-center justify-center shadow-lg shadow-indigo-500/25 relative">
-          <svg className="w-5 h-5 text-white relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg header-gradient flex items-center justify-center shadow-lg shadow-indigo-500/25 relative">
+          <svg className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-white relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -22,7 +22,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSettings, hasGemini, hasGo
           </svg>
         </div>
         <div>
-          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white leading-tight">
+          <h1 className="text-base sm:text-lg font-bold tracking-tight text-white leading-tight">
             Atlas{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400">
               Sónico
@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSettings, hasGemini, hasGo
 
         <button
           onClick={onOpenSettings}
-          className="p-2.5 rounded-xl bg-zinc-800/50 hover:bg-zinc-700/60 text-zinc-400 hover:text-white transition-all border border-zinc-700/30 hover:border-zinc-600/50"
+          className="p-2 rounded-lg bg-zinc-800/50 hover:bg-zinc-700/60 text-zinc-400 hover:text-white transition-all border border-zinc-700/30 hover:border-zinc-600/50"
           title="Configuración"
           aria-label="Abrir configuración"
         >

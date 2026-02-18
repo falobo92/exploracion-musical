@@ -26,6 +26,7 @@ export default function App() {
     if (typeof window === 'undefined') return true;
     return window.innerWidth >= 1024;
   });
+  const [selectedMapMixId, setSelectedMapMixId] = useState<string | undefined>();
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
 
   // API Keys
@@ -61,6 +62,10 @@ export default function App() {
     openSettings,
   });
 
+  const handleMapSelect = useCallback((mix: MusicMix) => {
+    setSelectedMapMixId(mix.id);
+  }, []);
+
   // Generar mixes con IA
   const handleGenerate = useCallback(() => {
     generate(apiKeys.geminiKey, {
@@ -89,7 +94,7 @@ export default function App() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans flex flex-col overflow-x-hidden">
       <Header onOpenSettings={openSettings} hasGemini={apiKeys.hasGemini} hasGoogle={apiKeys.hasGoogle} />
 
-      <main className="flex-1 flex flex-col px-3 sm:px-6 py-3 sm:py-4 max-w-[1920px] mx-auto w-full">
+      <main className="flex-1 flex flex-col px-3 sm:px-6 py-3 sm:py-4 pt-[60px] sm:pt-[64px] max-w-[1920px] mx-auto w-full">
         <FilterBar
           criteria={criteria}
           onChange={handleCriteriaChange}
@@ -110,12 +115,14 @@ export default function App() {
         {/* Contenido principal: Mapa + Lista lateral */}
         <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
           {/* Mapa */}
-          <div className={`transition-all duration-300 ease-out ${sidebarOpen ? 'lg:flex-1' : 'w-full'} min-w-0`}>
+          <div className={`min-w-0 transition-[flex,width] duration-[380ms] ease-[cubic-bezier(0.4,0,0.2,1)] ${sidebarOpen ? 'lg:flex-1' : 'w-full'}`}>
             <WorldMap
               mixes={filteredMixes}
-              onSelect={player.handlePlayCard}
-              selectedId={player.currentMix?.id}
-              className={`w-full h-[42dvh] min-h-[260px] max-h-[480px] sm:h-[400px] ${sidebarOpen ? 'lg:h-[calc(100vh-320px)]' : 'lg:h-[calc(100vh-320px)]'} rounded-2xl overflow-hidden border border-zinc-800/40 shadow-2xl shadow-black/20 relative z-0`}
+              onSelect={handleMapSelect}
+              onPlay={player.handlePlayCard}
+              selectedId={selectedMapMixId}
+              playingId={player.currentMix?.id}
+              className="w-full h-[42dvh] min-h-[260px] max-h-[480px] sm:h-[400px] sm:max-h-none lg:h-full rounded-2xl overflow-hidden border border-zinc-800/40 shadow-2xl shadow-black/20 relative z-0"
             />
           </div>
 
@@ -133,59 +140,59 @@ export default function App() {
           {/* Botón toggle panel lateral - solo desktop */}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="hidden lg:flex items-center justify-center w-5 h-20 self-center rounded-lg bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/30 hover:border-zinc-600/50 text-zinc-500 hover:text-zinc-200 transition-all shrink-0"
+            className="sidebar-toggle-btn hidden lg:flex items-center justify-center w-5 h-20 self-center rounded-lg bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/30 hover:border-zinc-600/50 text-zinc-500 hover:text-zinc-200 shrink-0"
             aria-label={sidebarOpen ? 'Ocultar lista' : 'Mostrar lista'}
             title={sidebarOpen ? 'Ocultar lista de canciones' : 'Mostrar lista de canciones'}
           >
-            <svg className={`w-3 h-3 transition-transform ${sidebarOpen ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <svg
+              className={`sidebar-toggle-btn__icon w-3 h-3${sidebarOpen ? '' : ' sidebar-toggle-btn__icon--closed'}`}
+              fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </button>
 
           {/* Panel lateral de canciones */}
-          <div className={`transition-all duration-300 ease-out overflow-hidden ${
-            sidebarOpen
-              ? 'max-h-[2200px] opacity-100 lg:w-[45%] xl:w-[40%]'
-              : 'max-h-0 opacity-0 pointer-events-none lg:w-0'
-          }`}>
-            <div className="lg:max-h-[calc(100vh-320px)] lg:overflow-y-auto lg:pr-1 scrollbar-thin">
-              {/* Header del panel */}
-              <div className="flex items-center justify-between mb-3 sticky top-0 z-10 bg-zinc-950/90 backdrop-blur-sm py-2 -mt-2">
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                  </svg>
-                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
-                    {filteredMixes.length} canciones
-                  </h3>
+          <div className={`sidebar-panel${sidebarOpen ? '' : ' sidebar-panel--closed'}`}>
+            <div className="sidebar-panel__body">
+              <div className="max-h-[65vh] overflow-y-auto pr-1 scrollbar-thin lg:max-h-[calc(100vh-320px)]">
+                {/* Header del panel */}
+                <div className="flex items-center justify-between mb-3 sticky top-0 z-10 bg-zinc-950/90 backdrop-blur-sm py-2 -mt-2">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                    <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
+                      {filteredMixes.length} canciones
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="lg:hidden text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    {sidebarOpen ? 'Ocultar' : 'Mostrar'}
+                  </button>
                 </div>
-                {/* Botón toggle en mobile */}
-                <button
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                  className="lg:hidden text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                >
-                  {sidebarOpen ? 'Ocultar' : 'Mostrar'}
-                </button>
-              </div>
 
-              {loading ? (
-                <SkeletonGrid count={6} />
-              ) : filteredMixes.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
-                  {filteredMixes.map((mix, index) => (
-                    <MixCard
-                      key={mix.id}
-                      mix={mix}
-                      onPlay={player.handlePlayCard}
-                      isPlaying={player.currentMix?.id === mix.id && player.isPlaying}
-                      isCurrent={player.currentMix?.id === mix.id}
-                      index={index}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState onGenerate={handleGenerate} onOpenSettings={openSettings} hasApiKey={apiKeys.hasGemini} />
-              )}
+                {loading ? (
+                  <SkeletonGrid count={6} />
+                ) : filteredMixes.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
+                    {filteredMixes.map((mix, index) => (
+                      <MixCard
+                        key={mix.id}
+                        mix={mix}
+                        onPlay={player.handlePlayCard}
+                        isPlaying={player.currentMix?.id === mix.id && player.isPlaying}
+                        isCurrent={player.currentMix?.id === mix.id}
+                        index={index}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState onGenerate={handleGenerate} onOpenSettings={openSettings} hasApiKey={apiKeys.hasGemini} />
+                )}
+              </div>
             </div>
           </div>
         </div>

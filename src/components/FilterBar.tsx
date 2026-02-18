@@ -284,7 +284,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     'bg-zinc-950/80 border border-zinc-800/50 text-white text-sm rounded-xl focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 block w-full p-2.5 placeholder:text-zinc-600 transition-all hover:border-zinc-700/60';
 
   return (
-    <section className="mb-4 bg-zinc-900/30 p-4 sm:p-5 rounded-2xl border border-zinc-800/30 backdrop-blur-sm relative z-10">
+    <section className="mb-4 bg-zinc-900/30 p-4 sm:p-5 rounded-2xl border border-zinc-800/30 backdrop-blur-sm relative z-20">
       {/* Encabezado */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
