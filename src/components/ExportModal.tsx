@@ -36,9 +36,14 @@ function generateExportText(mixes: MusicMix[], criteria: SearchCriteria): string
     lines.push(`    🌎 ${mix.country} · ${mix.continent}`);
     lines.push(`    📅 ${mix.year} · ${mix.bpm} BPM`);
     lines.push(`    💬 ${mix.description}`);
+    
     if (mix.videoId) {
       lines.push(`    ▶️ YouTube Music: https://music.youtube.com/watch?v=${mix.videoId}`);
       lines.push(`    ▶️ YouTube: https://www.youtube.com/watch?v=${mix.videoId}`);
+    } else {
+      const query = encodeURIComponent(mix.searchQuery || `${mix.artist} - ${mix.songTitle}`);
+      lines.push(`    🔎 Buscar en YouTube Music: https://music.youtube.com/search?q=${query}`);
+      lines.push(`    🔎 Buscar en YouTube: https://www.youtube.com/results?search_query=${query}`);
     }
     lines.push('');
   });
@@ -93,7 +98,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, mixes
             </div>
             <div>
               <h2 className="text-sm font-bold text-white">Exportar canciones</h2>
-              <p className="text-[11px] text-zinc-500">{mixes.length} canciones con enlaces de YouTube Music</p>
+              <p className="text-[11px] text-zinc-500">{mixes.length} canciones listas para compartir</p>
             </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg bg-zinc-800/60 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors">

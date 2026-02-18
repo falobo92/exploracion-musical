@@ -27,16 +27,16 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={() => onPlay(mix)}
     >
-      {/* Botón YouTube Music — visible al hacer hover */}
+      {/* Botón YouTube Music — Siempre visible para móvil */}
       <a
         href={ytMusicUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="absolute top-2.5 right-2.5 p-1.5 bg-black/70 hover:bg-red-600/90 rounded-lg text-white/70 hover:text-white transition-all opacity-0 group-hover:opacity-100 z-20"
+        className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-red-600 rounded-full text-white/90 shadow-lg backdrop-blur-sm transition-all z-20"
         title="Abrir en YouTube Music"
         onClick={(e) => e.stopPropagation()}
       >
-        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
           <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm0-18c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8z" />
           <path d="M10 15l5-3-5-3v6z" />
         </svg>
@@ -74,9 +74,6 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
           <span className="text-[10px] font-medium tracking-wide uppercase text-zinc-500">
             {mix.country}
           </span>
-          <span className="text-[10px] font-mono text-zinc-600 ml-auto">
-            {mix.year}
-          </span>
         </div>
 
         {/* Artista */}
@@ -103,8 +100,10 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
           <p className="text-indigo-300/70 text-sm italic mb-1.5 truncate">{mix.songTitle}</p>
         )}
 
-        {/* Style + BPM */}
+        {/* Style + BPM + Year */}
         <div className="text-zinc-500 text-xs font-mono mb-2.5 flex items-center gap-1.5">
+          <span className="text-zinc-400 font-semibold">{mix.year}</span>
+          <span className="text-zinc-700">·</span>
           <span>{mix.style}</span>
           <span className="text-zinc-700">·</span>
           <span>{mix.bpm} BPM</span>

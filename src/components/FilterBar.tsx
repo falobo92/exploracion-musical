@@ -352,6 +352,21 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         />
       </div>
 
+      {/* Quitar filtros */}
+      {(criteria.continent || criteria.country || criteria.style || criteria.year || criteria.bpm || criteria.descriptiveQuery) && (
+        <div className="mt-2.5 flex justify-end">
+          <button
+            onClick={() => onUpdateCriteria({ continent: '', country: '', style: '', year: '', bpm: '', descriptiveQuery: '' })}
+            className="px-3 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white bg-zinc-800/40 hover:bg-zinc-700/60 rounded-lg transition-all flex items-center gap-1.5 border border-zinc-800/30 hover:border-zinc-600/50"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Quitar filtros
+          </button>
+        </div>
+      )}
+
       {/* Selector de cantidad + acciones */}
       <div className="mt-4 flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">

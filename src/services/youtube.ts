@@ -90,7 +90,10 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
       const items = data.items ?? [];
 
       // Seleccionar el mejor resultado: priorizar los que contengan palabras del query en el título
+      // y términos de calidad (official, audio, high quality)
       const queryWords = query.toLowerCase().split(/[\s\-–]+/).filter(w => w.length > 2);
+      const qualityTerms = ['official', 'audio', 'high quality', 'hq', 'remastered', 'video oficial'];
+      
       let bestId: string | null = null;
       let bestScore = -1;
 
@@ -99,7 +102,18 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
         if (!videoId) continue;
 
         const title = (item.snippet?.title ?? '').toLowerCase();
-        const score = queryWords.reduce((s: number, w: string) => s + (title.includes(w) ? 1 : 0), 0);
+        const channelTitle = (item.snippet?.channelTitle ?? '').toLowerCase();
+        
+        // Puntuación base por coincidencia de palabras del query
+        let score = queryWords.reduce((s: number, w: string) => s + (title.includes(w) ? 2 : 0), 0);
+        
+        // Bonus por términos de calidad
+        score += qualityTerms.reduce((s: number, w: string) => s + (title.includes(w) ? 1 : 0), 0);
+        
+        // Bonus por canales que suelen ser oficiales o de alta calidad
+        if (channelTitle.includes('topic') || channelTitle.includes('official') || channelTitle.includes('vevo')) {
+          score += 2;
+        }
 
         if (score > bestScore) {
           bestScore = score;

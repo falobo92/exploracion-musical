@@ -4,7 +4,7 @@ import { getCoordsForCountry } from '@/constants/countryCoords';
 
 const TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 2;
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-2.0-flash';
 
 class GeminiError extends Error {
   constructor(
@@ -68,80 +68,85 @@ export async function generateStrangeMixes(
   const ai = new GoogleGenAI({ apiKey });
   const count = criteria.songCount || 15;
 
-  // ── Construir restricciones a partir de los filtros del usuario ──
-  const filters: string[] = [];
+  // ── Construir contexto musical (Inputs como dirección creativa, no filtros estrictos) ──
+  const contextParts: string[] = [];
 
-  if (criteria.continent) {
-    filters.push(`CONTINENT FILTER: ALL tracks MUST be from continent "${criteria.continent}". Do NOT include tracks from other continents.`);
+  // 1. Core Theme (Tema Principal)
+  if (criteria.descriptiveQuery?.trim()) {
+    contextParts.push(`CORE THEME: "${criteria.descriptiveQuery.trim()}"
+    (This is the primary inspiration. All other inputs should be interpreted to support this theme.)`);
   }
-  if (criteria.country) {
-    filters.push(`COUNTRY FILTER: ALL tracks MUST be from "${criteria.country}". The 'country' field MUST be exactly "${criteria.country}".`);
+
+  // 2. Regional Focus (Enfoque Regional)
+  if (criteria.continent || criteria.country) {
+    const region = [criteria.country, criteria.continent].filter(Boolean).join(', ');
+    contextParts.push(`REGIONAL FOCUS: Explore the musical landscape of ${region}.
+    (Prioritize artists from this region, but allow for cross-cultural collaborations if they fit the vibe perfectly.)`);
   }
+
+  // 3. Musical Flavor (Sabor Musical)
   if (criteria.style) {
-    filters.push(`GENRE/STYLE FILTER: ALL tracks MUST be of genre "${criteria.style}" or closely related sub-genres.`);
+    contextParts.push(`MUSICAL FLAVOR: Ground the selection in "${criteria.style}" and its sub-genres/fusions.
+    (Use this as a stylistic anchor, but feel free to explore adjacent genres that blend well.)`);
   }
+
+  // 4. Temporal Atmosphere (Atmósfera Temporal)
   if (criteria.year) {
     const decadeStart = parseInt(criteria.year);
     if (!isNaN(decadeStart)) {
-      filters.push(`DECADE FILTER: ALL tracks MUST have been released between ${decadeStart} and ${decadeStart + 9}. The 'year' field MUST be the actual release year (e.g. "${decadeStart + 3}"), NOT the decade label.`);
+      contextParts.push(`TEMPORAL ATMOSPHERE: Focus on the era around ${criteria.year}s (${decadeStart}-${decadeStart + 9}).
+      (Capture the sound and production style of this decade.)`);
     } else {
-      filters.push(`DECADE FILTER: ALL tracks MUST be from the ${criteria.year}. Return the actual release year in the 'year' field.`);
+      contextParts.push(`TEMPORAL ATMOSPHERE: Focus on the year ${criteria.year}.`);
     }
   }
+
+  // 5. Energy Level (Nivel de Energía)
   if (criteria.bpm) {
-    const [minBpm, maxBpm] = criteria.bpm.split('-').map(Number);
-    if (minBpm && maxBpm) {
-      filters.push(`BPM FILTER: ALL tracks MUST have a tempo between ${minBpm} and ${maxBpm} BPM. The 'bpm' field must reflect this.`);
-    }
+    contextParts.push(`ENERGY LEVEL: Aim for a tempo range of ${criteria.bpm} BPM.
+    (Select tracks that maintain this energy flow.)`);
   }
-
-  let magicInstruction = '';
-  if (criteria.descriptiveQuery?.trim()) {
-    magicInstruction = `
-    CREATIVE USER REQUEST: "${criteria.descriptiveQuery.trim()}"
-    Interpret this creatively and use it as the primary theme for the playlist.
-    Examples of interpretation:
-    - "Sonidos de la selva" → Cumbia Amazónica, Exotica, Field Recordings from jungle regions.
-    - "Jazz sin saxofón" → Piano Jazz, Guitar Jazz, Vocal Jazz, Fusion without sax.
-    - "Música triste bailable" → Dark Wave, Synth Pop, Sad Disco.
-    `;
-  }
-
-  const filtersBlock = filters.length > 0
-    ? `\n    ACTIVE FILTERS (MANDATORY — every track MUST satisfy ALL of these):\n    ${filters.map((f, i) => `${i + 1}. ${f}`).join('\n    ')}\n`
-    : '';
 
   const defaultContext = 'Explore eclectic sounds from around the globe (Funk, Afrobeat, City Pop, Cumbia, Psych Rock, Jazz Fusion, Highlife, Tropicália, etc.).';
 
+  const musicalContext = contextParts.length > 0
+    ? `\n    MUSICAL CONTEXT (Use these inputs to guide your curation):\n    ${contextParts.map((p, i) => `${i + 1}. ${p}`).join('\n    ')}\n`
+    : `\n    OPEN EXPLORATION: ${defaultContext}\n`;
+
   const prompt = `
-    ROLE: You are an expert Ethnomusicologist and DJ specializing in Rare Grooves, World Music, and Eclectic Fusions.
+    ROLE: Eres un Etnomusicólogo experto y DJ de clase mundial especializado en Rare Grooves, Música del Mundo y Fusiones Eclécticas.
+    Tu superpoder es conectar puntos musicales inesperados y crear viajes sonoros coherentes basados en inputs abstractos o específicos.
 
-    TASK: Generate a playlist of exactly ${count} distinct, real tracks.
-    GOAL: Discover musical gems. Avoid mainstream "Top 40" hits unless the user specifically requests mainstream music.
-    ${filtersBlock}
-    ${magicInstruction || (filters.length === 0 ? `OPEN EXPLORATION: ${defaultContext}` : '')}
+    TASK: Cura una lista de reproducción de exactamente ${count} pistas reales y verificables.
+    
+    CURATION PHILOSOPHY:
+    - Prioriza la "VIBRA" y la calidad musical sobre la adherencia estricta a reglas si hay conflicto.
+    - Si el usuario pide "Música para dormir" (Core Theme) pero selecciona "Heavy Metal" (Flavor), prioriza el Core Theme (quizás baladas de metal o instrumentales suaves).
+    - Busca joyas ocultas, lados B y artistas de culto. Evita lo obvio.
 
-    STRICT OUTPUT RULES:
-    1. REAL SONGS ONLY. Every track must be a real, verifiable song. If unsure, pick a well-known track from that genre/country.
-    2. LANGUAGE RULES:
-       - 'description', 'style', 'country', 'continent' → MUST be in SPANISH.
-       - 'songTitle' and 'artist' → Keep original names (never translate).
-    3. 'searchQuery' → Format MUST be exactly: "Artist Name - Song Title"
-    4. 'year' → MUST be the actual release year as a 4-digit string (e.g. "1983", "2015"). Never use decade labels like "1980s".
-    5. 'continent' → MUST be one of: "África", "Asia", "Europa", "América del Norte", "América del Sur", "Oceanía"
-    6. 'country' → MUST be the country name in Spanish (e.g. "Japón", "Estados Unidos", "Nigeria").
-    7. DIVERSITY: ${criteria.year ? 'Vary within the selected decade.' : 'Vary decades (1960s–2020s).'} ${criteria.bpm ? '' : 'Vary tempos.'}
+    ${musicalContext}
+
+    STRICT OUTPUT RULES (Data Integrity):
+    1. SOLO CANCIONES REALES. Cada pista debe existir y ser verificable.
+    2. REGLAS DE IDIOMA:
+       - 'description', 'style', 'country', 'continent' → DEBEN estar en ESPAÑOL.
+       - 'songTitle' y 'artist' → Mantén los nombres originales.
+    3. 'searchQuery' → Formato exacto: "Artist Name - Song Title".
+    4. 'year' → Año de lanzamiento real (4 dígitos).
+    5. 'continent' → Uno de: "África", "Asia", "Europa", "América del Norte", "América del Sur", "Oceanía".
+    6. 'country' → Nombre del país en español.
+    7. DIVERSIDAD: Si no se especifica una era, viaja por el tiempo. Si no se especifica región, viaja por el mundo.
 
     REQUIRED JSON FIELDS PER TRACK:
-    - style (Genre in Spanish, e.g. "Funk Psicodélico", "Jazz Fusión")
-    - country (Country in Spanish)
-    - continent (One of the 6 listed above)
-    - artist (Original name)
-    - songTitle (Original title)
-    - year (4-digit release year as string)
-    - bpm (Approximate BPM as number)
-    - description (Catchy, max 8 words in Spanish)
-    - searchQuery ("Artist Name - Song Title")
+    - style: Género específico en español.
+    - country: País de origen en español.
+    - continent: Continente (de la lista permitida).
+    - artist: Nombre original del artista.
+    - songTitle: Título original de la canción.
+    - year: Año de lanzamiento (YYYY).
+    - bpm: BPM aproximado (número).
+    - description: Breve reseña experta en español (máx 12 palabras) explicando por qué encaja en el contexto.
+    - searchQuery: "Artista - Título".
   `;
 
   const responseSchema = {
@@ -180,7 +185,7 @@ export async function generateStrangeMixes(
           config: {
             responseMimeType: 'application/json',
             responseSchema,
-            temperature: 0.85,
+            temperature: 0.7,
           },
         }),
         TIMEOUT_MS
