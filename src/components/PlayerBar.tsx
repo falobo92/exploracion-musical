@@ -57,6 +57,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(80);
   const [showVolume, setShowVolume] = useState(false);
+  const [showVideo, setShowVideo] = useState(false); // Nuevo estado para controlar visibilidad del video
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [audioFailed, setAudioFailed] = useState(false);
   const [audioRetryToken, setAudioRetryToken] = useState(0);
@@ -476,27 +477,36 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
             <div className="flex items-center gap-3 sm:gap-4">
 
-              {/* YouTube iframe (fallback) — siempre oculto cuando audio nativo está activo */}
+              {/* YouTube iframe (fallback) — siempre oculto cuando audio nativo está activo, y opcional cuando no */}
               <div
                 id="yt-player-wrapper"
                 className={
-                  useNativeAudio
+                  useNativeAudio || !showVideo
                     ? 'fixed -left-[9999px] -top-[9999px] w-[320px] h-[180px] overflow-hidden pointer-events-none'
-                    : 'fixed -left-[9999px] -top-[9999px] w-[320px] h-[180px] overflow-hidden pointer-events-none sm:relative sm:left-auto sm:top-auto sm:w-[213px] sm:h-[120px] sm:overflow-hidden sm:pointer-events-auto sm:shrink-0 sm:rounded-lg sm:shadow-lg sm:shadow-black/30 sm:border sm:border-zinc-800/30'
+                    : 'fixed bottom-[140px] right-4 sm:bottom-[100px] sm:right-6 z-40 w-[280px] h-[158px] sm:w-[320px] sm:h-[180px] rounded-xl overflow-hidden shadow-2xl shadow-black/50 border border-zinc-700/50 transition-all duration-300'
                 }
               >
-                <div id="yt-player-element" className="w-full h-full" />
+                <div className="relative w-full h-full bg-black">
+                    <div id="yt-player-element" className="w-full h-full" />
+                    {/* Botón para cerrar video flotante */}
+                    <button 
+                        onClick={() => setShowVideo(false)}
+                        className="absolute top-2 right-2 p-1 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors z-10"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
               </div>
 
-              {/* Thumbnail desktop — visible cuando audio nativo está activo */}
-              {useNativeAudio && (
-                <div className="hidden sm:block shrink-0">
+              {/* Thumbnail desktop — visible siempre que el video flotante NO esté activo */}
+              {(!showVideo || useNativeAudio) && (
+                <div className="hidden sm:block shrink-0 group relative">
                   <div className="w-[120px] h-[120px] rounded-lg overflow-hidden bg-zinc-800 relative shadow-lg shadow-black/30 border border-zinc-800/30">
                     {videoId ? (
                       <img
                         src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`}
                         alt=""
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
@@ -506,7 +516,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                       </div>
                     )}
                     {isPlaying && (
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
                         <div className="flex gap-[3px] items-end h-5">
                           <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
                           <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
@@ -514,6 +524,19 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                           <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.6s', '--eq-delay': '0.15s' } as React.CSSProperties} />
                         </div>
                       </div>
+                    )}
+                    
+                    {/* Botón para ver video (solo si no es audio nativo y tenemos videoId) */}
+                    {!useNativeAudio && videoId && (
+                        <button 
+                            onClick={() => setShowVideo(true)}
+                            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                            title="Ver video"
+                        >
+                            <svg className="w-8 h-8 text-white drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                        </button>
                     )}
                   </div>
                 </div>
@@ -564,10 +587,26 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                         {currentIndex + 1}/{totalTracks}
                       </span>
                     </div>
-                    <p className="text-zinc-500 text-[11px] sm:text-xs truncate mb-1 sm:mb-1.5">
-                      {currentMix.style} · {currentMix.country}
-                      <span className="hidden sm:inline"> · {currentMix.year} · {currentMix.bpm} BPM</span>
-                    </p>
+                    <div className="flex items-center gap-2 mb-1 sm:mb-1.5">
+                      <p className="text-zinc-500 text-[11px] sm:text-xs truncate flex-1">
+                        {currentMix.style} · {currentMix.country}
+                        <span className="hidden sm:inline"> · {currentMix.year} · {currentMix.bpm} BPM</span>
+                      </p>
+                      {currentMix.videoId && (
+                        <a
+                          href={`https://music.youtube.com/watch?v=${currentMix.videoId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-zinc-500 hover:text-indigo-400 transition-colors flex items-center gap-1 shrink-0"
+                          title="Escuchar en YouTube Music"
+                        >
+                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/>
+                          </svg>
+                          <span className="hidden sm:inline">YT Music</span>
+                        </a>
+                      )}
+                    </div>
                   </>
                 )}
                 {/* Progress bar */}

@@ -73,7 +73,9 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
   return withRetry(async () => {
     try {
       // Sin videoCategoryId para no filtrar videos musicales válidos; maxResults=3 para mejor selección
-      const url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(query)}&maxResults=3&type=video&key=${apiKey}`;
+      // Se optimiza el query para encontrar el audio oficial
+      const finalQuery = `${query}`; // El query ya viene formateado desde Gemini como "Artist - Title (Official Audio)"
+      const url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(finalQuery)}&maxResults=5&type=video&videoEmbeddable=true&key=${apiKey}`;
       const response = await fetchWithTimeout(url);
 
       if (!response.ok) {
@@ -93,11 +95,12 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
 
       // Seleccionar el mejor resultado: priorizar los que contengan palabras del query en el título
       // y términos de calidad (official, audio, high quality)
-      const queryWords = query.toLowerCase().split(/[\s\-–]+/).filter(w => w.length > 2);
-      const qualityTerms = ['official', 'audio', 'high quality', 'hq', 'remastered', 'video oficial'];
+      const queryWords = query.toLowerCase().replace(/\(official audio\)/g, '').split(/[\s\-–]+/).filter(w => w.length > 2);
+      const qualityTerms = ['official', 'audio', 'video oficial', 'lyric', 'topic'];
+      const negativeTerms = ['reaction', 'review', 'cover', 'tutorial', 'karaoke', 'instrumental', 'remix'];
       
       let bestId: string | null = null;
-      let bestScore = -1;
+      let bestScore = -100;
 
       for (const item of items) {
         const videoId = item.id?.videoId;
@@ -105,17 +108,34 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
 
         const title = (item.snippet?.title ?? '').toLowerCase();
         const channelTitle = (item.snippet?.channelTitle ?? '').toLowerCase();
+        const description = (item.snippet?.description ?? '').toLowerCase();
         
         // Puntuación base por coincidencia de palabras del query
-        let score = queryWords.reduce((s: number, w: string) => s + (title.includes(w) ? 2 : 0), 0);
+        let score = queryWords.reduce((s: number, w: string) => s + (title.includes(w) ? 3 : 0), 0);
         
         // Bonus por términos de calidad
-        score += qualityTerms.reduce((s: number, w: string) => s + (title.includes(w) ? 1 : 0), 0);
+        score += qualityTerms.reduce((s: number, w: string) => s + (title.includes(w) ? 2 : 0), 0);
         
+        // Penalización fuerte por términos negativos (a menos que estén en el query original)
+        const isCoverRequested = query.toLowerCase().includes('cover');
+        const isRemixRequested = query.toLowerCase().includes('remix');
+
+        if (!isCoverRequested) {
+            score -= negativeTerms.reduce((s: number, w: string) => s + (title.includes(w) ? 5 : 0), 0);
+        }
+        if (!isRemixRequested && title.includes('remix')) {
+             score -= 3;
+        }
+
         // Bonus por canales que suelen ser oficiales o de alta calidad
         if (channelTitle.includes('topic') || channelTitle.includes('official') || channelTitle.includes('vevo')) {
-          score += 2;
+          score += 4;
         }
+        
+        // Preferir videos que NO sean muy cortos (shorts/previews) ni muy largos (full albums)
+        // Nota: La API de search no devuelve duración, así que confiamos en título/descripción
+        if (title.includes('full album') || title.includes('completo')) score -= 2;
+        if (title.includes('preview') || title.includes('teaser')) score -= 5;
 
         if (score > bestScore) {
           bestScore = score;

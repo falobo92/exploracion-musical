@@ -7,38 +7,30 @@ interface ToastContainerProps {
   onDismiss: (id: string) => void;
 }
 
-const typeConfig: Record<ToastType['type'], { icon: React.ReactNode; accent: string; border: string }> = {
+const typeConfig: Record<ToastType['type'], { icon: string; accent: string; border: string; bg: string }> = {
   info: {
-    icon: (
-      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
+    icon: 'info',
     accent: 'text-blue-400',
     border: 'border-blue-500/20',
+    bg: 'bg-blue-500/5',
   },
   success: {
-    icon: (
-      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-      </svg>
-    ),
+    icon: 'check_circle',
     accent: 'text-emerald-400',
     border: 'border-emerald-500/20',
+    bg: 'bg-emerald-500/5',
   },
   error: {
-    icon: (
-      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    accent: 'text-red-400',
-    border: 'border-red-500/20',
+    icon: 'error',
+    accent: 'text-rose-400',
+    border: 'border-rose-500/20',
+    bg: 'bg-rose-500/5',
   },
   loading: {
-    icon: <Spinner className="w-4 h-4 shrink-0 text-indigo-400" />,
+    icon: 'refresh',
     accent: 'text-indigo-400',
-    border: 'border-indigo-500/20',
+    border: 'border-indigo-500/30',
+    bg: 'bg-indigo-500/10',
   },
 };
 
@@ -46,18 +38,26 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[200] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <div className="fixed top-8 right-8 z-[200] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
       {toasts.map(toast => {
         const config = typeConfig[toast.type];
         return (
           <div
             key={toast.id}
-            className={`toast-enter pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-900/95 backdrop-blur-2xl border ${config.border} shadow-2xl shadow-black/30 cursor-pointer hover:bg-zinc-800/95 transition-colors`}
+            className={`toast-enter pointer-events-auto flex items-center gap-4 px-6 py-4 rounded-2xl bg-zinc-900/90 backdrop-blur-2xl border ${config.border} shadow-2xl shadow-black/40 cursor-pointer hover:bg-zinc-800 transition-all`}
             onClick={() => onDismiss(toast.id)}
             role="alert"
           >
-            <div className={config.accent}>{config.icon}</div>
-            <span className="text-sm text-zinc-200 leading-snug flex-1">{toast.message}</span>
+            <div className={config.accent}>
+              {toast.type === 'loading' ? (
+                <Spinner className="w-5 h-5 shrink-0" />
+              ) : (
+                <span className="material-symbols-outlined text-xl">{config.icon}</span>
+              )}
+            </div>
+            <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-200 leading-snug flex-1">
+              {toast.message}
+            </span>
           </div>
         );
       })}

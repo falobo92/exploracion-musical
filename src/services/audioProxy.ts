@@ -2,8 +2,10 @@ const PIPED_INSTANCES = [
   'https://pipedapi.kavin.rocks',
   'https://pipedapi.adminforge.de',
   'https://pipedapi.r4fo.com',
-  'https://api.piped.privacy.com.de',
-  'https://pipedapi.smnz.de'
+  'https://pipedapi.smnz.de',
+  'https://api.piped.otbea.com',
+  'https://pipedapi.ducks.party',
+  'https://pipedapi.noseals.io'
 ];
 
 const INVIDIOUS_INSTANCES = [
@@ -78,7 +80,7 @@ export async function getAudioUrl(videoId: string): Promise<string | null> {
   const shuffle = (arr: string[]) => [...arr].sort(() => 0.5 - Math.random());
 
   const candidates = [
-    ...shuffle(PIPED_INSTANCES).slice(0, 2).map(url => ({ url, type: 'piped' as const })),
+    ...shuffle(PIPED_INSTANCES).slice(0, 3).map(url => ({ url, type: 'piped' as const })),
     ...shuffle(INVIDIOUS_INSTANCES).slice(0, 1).map(url => ({ url, type: 'invidious' as const }))
   ];
 

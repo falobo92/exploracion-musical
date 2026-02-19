@@ -22,6 +22,10 @@ export function useNotifications() {
       const toast: Toast = { id, message, type, duration };
 
       setToasts(prev => {
+        // Si es un loading, asegurarnos de que sea el último y no se descarte
+        if (type === 'loading') {
+          return [...prev.filter(t => t.type !== 'loading'), toast];
+        }
         // Limitar a 5 toasts visibles
         const next = [...prev, toast];
         if (next.length > 5) next.shift();

@@ -73,6 +73,71 @@ function classifyError(error: unknown): GeminiError {
   return new GeminiError(msg || 'Error desconocido al generar.', 'UNKNOWN');
 }
 
+// ─── DATASETS FOR RANDOM SEEDING ───
+const NICHE_GENRES = [
+  'Tuvan Throat Singing', 'Gnawa', 'Chicha', 'Forró', 'Dangdut', 'Raï', 'Mbalax', 'Soukous',
+  'Krautrock', 'Zeuhl', 'Math Rock', 'Gamelan', 'Kuduro', 'Baile Funk', 'Chalga', 'Turbo-Folk',
+  'Manele', 'Ethio-Jazz', 'Luk Thung', 'Enka', 'Jùjú', 'Griot', 'Gqom', 'Amapiano', 'Chamame',
+  'Huayno', 'Gagaku', 'Zamrock', 'Highlife', 'Afro-Psych', 'City Pop', 'Shibuya-kei', 'Tropicalia',
+  'MPB', 'Samba-Jazz', 'Bossa Nova', 'Fado', 'Flamenco Nuevo', 'Exotica', 'Space Age Pop',
+  'Library Music', 'Dungeon Synth', 'Vaporwave', 'Mallsoft', 'Future Funk', 'Witch House',
+  'Seapunk', 'Cloud Rap', 'Phonk', 'Drill', 'Grime', 'UK Garage', '2-Step', 'Jungle',
+  'Drum and Bass', 'Breakcore', 'IDM', 'Glitch', 'Ambient', 'Drone', 'Field Recordings',
+  'Musique Concrète', 'Electroacoustic', 'Noise', 'Power Electronics', 'Industrial', 'EBM',
+  'New Beat', 'Italo Disco', 'Spacesynth', 'Eurobeat', 'Hi-NRG', 'Freestyle', 'Miami Bass',
+  'Ghetto Tech', 'Footwork', 'Juke', 'Baltimore Club', 'Jersey Club', 'Ballroom', 'Vogue',
+  'Kwaito', 'Bubblegum', 'Pancoc', 'Tejano', 'Norteño', 'Banda', 'Corridos Tumbados',
+  'Bachata', 'Merengue', 'Salsa Dura', 'Boogaloo', 'Latin Soul', 'Chicano Soul', 'Lowrider Oldies',
+  'Rocksteady', 'Dub', 'Lovers Rock', 'Dancehall', 'Ragga', 'Soca', 'Calypso', 'Mento',
+  'Zouk', 'Kizomba', 'Semba', 'Funaná', 'Morna', 'Coladeira', 'Batuque', 'Marroban',
+  'Pandza', 'Marrabenta', 'Chimurenga', 'Jit', 'Sungura', 'Mbira', 'Benga', 'Kapuka',
+  'Genge', 'Bongo Flava', 'Taarab', 'Mahraganat', 'Shaabi', 'Dabke', 'Khaliji', 'Bandari',
+  'Qawwali', 'Sufi Rock', 'Coke Studio', 'Bollywood', 'Filmi', 'Indipop', 'Raga Rock',
+  'Carnatic Fusion', 'Baul', 'Bhatiali', 'Lalon', 'Nazrul Geeti', 'Rabindra Sangeet',
+  'Cantopop', 'Mandopop', 'Hokkien Pop', 'Enka', 'Kayokyoku', 'J-Pop', 'J-Rock', 'Visual Kei',
+  'Vocaloid', 'Denpa', 'Touhou', 'Doujin', 'Chiptune', 'Bitpop', 'Nintendocore', 'Synthwave',
+  'Retrowave', 'Outrun', 'Darkwave', 'Coldwave', 'Minimal Wave', 'Post-Punk', 'Goth Rock',
+  'Deathrock', 'Shoegaze', 'Dream Pop', 'Twee Pop', 'Jangle Pop', 'C86', 'Madchester',
+  'Baggy', 'Britpop', 'Pub Rock', 'Mod Revival', 'Northern Soul', 'Blue-Eyed Soul', 'Yacht Rock',
+  'AOR', 'Soft Rock', 'Dad Rock', 'Heartland Rock', 'Roots Rock', 'Americana', 'Alt-Country',
+  'Outlaw Country', 'Bakersfield Sound', 'Nashville Sound', 'Countrypolitan', 'Western Swing',
+  'Bluegrass', 'Old-Time', 'Appalachian', 'Cajun', 'Zydeco', 'Swamp Pop', 'Delta Blues',
+  'Chicago Blues', 'Texas Blues', 'Piedmont Blues', 'Hill Country Blues', 'Jump Blues',
+  'Rhythm and Blues', 'Doo-Wop', 'Rock and Roll', 'Rockabilly', 'Psychobilly', 'Surf Rock',
+  'Garage Rock', 'Frat Rock', 'Pub Rock', 'Punk', 'Hardcore', 'Post-Hardcore', 'Emo',
+  'Screamo', 'Mathcore', 'Grindcore', 'Crust Punk', 'D-Beat', 'Powerviolence', 'Sludge',
+  'Doom Metal', 'Stoner Rock', 'Desert Rock', 'Heavy Metal', 'Thrash Metal', 'Death Metal',
+  'Black Metal', 'Viking Metal', 'Folk Metal', 'Symphonic Metal', 'Power Metal', 'Prog Metal',
+  'Djent', 'Nu Metal', 'Rap Metal', 'Funk Metal', 'Alternative Metal', 'Industrial Metal',
+  'Groove Metal', 'Speed Metal', 'Glam Metal', 'Hair Metal', 'Arena Rock', 'Stadium Rock'
+];
+
+const UNUSUAL_REGIONS = [
+  'Tuva', 'Mali', 'Cabo Verde', 'Reunión', 'Madagascar', 'Myanmar', 'Georgia', 'Armenia',
+  'Uzbekistán', 'Azerbaiyán', 'Kazajistán', 'Kirguistán', 'Tayikistán', 'Turkmenistán',
+  'Mongolia', 'Tíbet', 'Nepal', 'Bután', 'Sikkim', 'Ladakh', 'Cachemira', 'Punjab',
+  'Rajastán', 'Bengala', 'Kerala', 'Tamil Nadu', 'Sri Lanka', 'Maldivas', 'Andamán y Nicobar',
+  'Sumatra', 'Java', 'Bali', 'Sulawesi', 'Borneo', 'Papúa', 'Timor', 'Molucas',
+  'Filipinas', 'Taiwán', 'Okinawa', 'Hokkaido', 'Corea del Norte', 'Siberia', 'Kamchatka',
+  'Yakutia', 'Buriatia', 'Altái', 'Tuvá', 'Jakasia', 'Tartaristán', 'Bashkortostán',
+  'Daguestán', 'Chechenia', 'Osetia', 'Abjasia', 'Adjara', 'Nagorno-Karabaj', 'Kurdistán',
+  'Asiria', 'Yezidi', 'Baluchistán', 'Pashtunistán', 'Waziristán', 'Gilgit-Baltistán',
+  'Zanzíbar', 'Comoras', 'Seychelles', 'Mauricio', 'Rodrigues', 'Santa Elena', 'Ascensión',
+  'Tristán de Acuña', 'Malvinas', 'Georgia del Sur', 'Antártida', 'Groenlandia', 'Islandia',
+  'Feroe', 'Svalbard', 'Jan Mayen', 'Åland', 'Saami', 'Karelia', 'Ingria', 'Vepsia',
+  'Setomaa', 'Livonia', 'Curlandia', 'Latgale', 'Samogitia', 'Sudovia', 'Prusia',
+  'Silesia', 'Lusacia', 'Kaxubia', 'Moravia', 'Rutenia', 'Transilvania', 'Banato',
+  'Dobruja', 'Besarabia', 'Bucovina', 'Galitzia', 'Volinia', 'Podolia', 'Crimea',
+  'Kubán', 'Circasia', 'Abjasia', 'Lazistán', 'Ponto', 'Capadocia', 'Cilicia',
+  'Jonia', 'Tracia', 'Macedonia', 'Epiro', 'Tesalia', 'Peloponeso', 'Creta',
+  'Chipre', 'Rodas', 'Lesbos', 'Quíos', 'Samos', 'Icaria', 'Lemnos', 'Tasos'
+];
+
+function getRandomSubset(arr: string[], count: number): string[] {
+  const shuffled = [...arr].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, count);
+}
+
 export async function generateStrangeMixes(
   apiKey: string,
   criteria: SearchCriteria
@@ -84,6 +149,14 @@ export async function generateStrangeMixes(
 
   // ── Construir contexto musical (Inputs como dirección creativa, no filtros estrictos) ──
   const contextParts: string[] = [];
+
+  // Random Seeds para forzar variabilidad
+  const randomGenres = getRandomSubset(NICHE_GENRES, 5);
+  const randomRegions = getRandomSubset(UNUSUAL_REGIONS, 3);
+  
+  contextParts.push(`CREATIVE SEEDS (Use these as inspiration for variety if they fit the vibe):
+  - Genres to consider: ${randomGenres.join(', ')}
+  - Regions to explore: ${randomRegions.join(', ')}`);
 
   // 1. Core Theme (Tema Principal)
   if (criteria.descriptiveQuery?.trim()) {
@@ -121,31 +194,36 @@ export async function generateStrangeMixes(
     (Select tracks that maintain this energy flow.)`);
   }
 
-  const defaultContext = 'Explore eclectic sounds from around the globe (Funk, Afrobeat, City Pop, Cumbia, Psych Rock, Jazz Fusion, Highlife, Tropicália, etc.).';
+  const defaultContext = `Explore eclectic sounds from around the globe. Think outside the box. 
+  Consider genres like: ${NICHE_GENRES.slice(0, 20).join(', ')}, etc.`;
 
   const musicalContext = contextParts.length > 0
     ? `\n    MUSICAL CONTEXT (Use these inputs to guide your curation):\n    ${contextParts.map((p, i) => `${i + 1}. ${p}`).join('\n    ')}\n`
     : `\n    OPEN EXPLORATION: ${defaultContext}\n`;
 
-  const prompt = `
+    const prompt = `
     ROLE: Eres un Etnomusicólogo experto y DJ de clase mundial especializado en Rare Grooves, Música del Mundo y Fusiones Eclécticas.
     Tu superpoder es conectar puntos musicales inesperados y crear viajes sonoros coherentes basados en inputs abstractos o específicos.
-
+    
     TASK: Cura una lista de reproducción de exactamente ${count} pistas reales y verificables.
     
     CURATION PHILOSOPHY:
+    - **VARIABILIDAD EXTREMA**: Evita repetir los mismos artistas o géneros obvios. Sorprende al usuario.
+    - **ANTI-MAINSTREAM**: Prioriza artistas con < 500k oyentes mensuales. Busca joyas ocultas, lados B, ediciones privadas y artistas de culto.
+    - **DIVERSIDAD GEOGRÁFICA**: A menos que se especifique una región, incluye música de al menos 4 continentes diferentes.
     - Prioriza la "VIBRA" y la calidad musical sobre la adherencia estricta a reglas si hay conflicto.
     - Si el usuario pide "Música para dormir" (Core Theme) pero selecciona "Heavy Metal" (Flavor), prioriza el Core Theme (quizás baladas de metal o instrumentales suaves).
-    - Busca joyas ocultas, lados B y artistas de culto. Evita lo obvio.
 
     ${musicalContext}
 
     STRICT OUTPUT RULES (Data Integrity):
-    1. SOLO CANCIONES REALES. Cada pista debe existir y ser verificable.
+    1. SOLO CANCIONES REALES. Cada pista debe existir y ser verificable en YouTube.
     2. REGLAS DE IDIOMA:
        - 'description', 'style', 'country', 'continent' → DEBEN estar en ESPAÑOL.
        - 'songTitle' y 'artist' → Mantén los nombres originales.
-    3. 'searchQuery' → Formato exacto: "Artist Name - Song Title".
+    3. 'searchQuery' → Formato exacto: "Artist Name - Song Title (Official Audio)".
+       - Asegúrate de que la combinación Artista + Canción sea única y correcta.
+       - Evita "Live", "Cover", "Remix" a menos que sea esencial para el género.
     4. 'year' → Año de lanzamiento real (4 dígitos).
     5. 'continent' → Uno de: "África", "Asia", "Europa", "América del Norte", "América del Sur", "Oceanía".
     6. 'country' → Nombre del país en español.
@@ -160,7 +238,7 @@ export async function generateStrangeMixes(
     - year: Año de lanzamiento (YYYY).
     - bpm: BPM aproximado (número).
     - description: Breve reseña experta en español (máx 12 palabras) explicando por qué encaja en el contexto.
-    - searchQuery: "Artista - Título".
+    - searchQuery: "Artista - Título (Official Audio)".
   `;
 
   const responseSchema = {
@@ -199,7 +277,7 @@ export async function generateStrangeMixes(
           config: {
             responseMimeType: 'application/json',
             responseSchema,
-            temperature: 0.7,
+            temperature: 1.5, // Aumentado para mayor creatividad
           },
         }),
         TIMEOUT_MS

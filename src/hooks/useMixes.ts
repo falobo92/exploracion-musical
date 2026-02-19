@@ -74,7 +74,7 @@ export function useMixes() {
       setLoading(true);
       options.onReset();
       const desc = criteria.descriptiveQuery ? ` — "${criteria.descriptiveQuery}"` : '';
-      const toastId = options.notify(`Generando ${criteria.songCount} descubrimientos musicales con IA${desc}...`, 'loading');
+      const toastId = options.notify(`Generando ${criteria.songCount} descubrimientos musicales con IA${desc}...`, 'loading', 0);
 
       try {
         const newMixes = await generateStrangeMixes(geminiKey, criteria);

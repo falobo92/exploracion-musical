@@ -1,32 +1,32 @@
 import React from 'react';
 
 export const SkeletonCard: React.FC = () => (
-  <div className="rounded-xl p-5 pl-6 bg-zinc-900/50 border border-zinc-800/30 relative overflow-hidden">
+  <div className="rounded-2xl p-6 pl-8 bg-background-dark/40 border border-white/5 relative overflow-hidden glass-card">
     {/* Accent strip */}
     <div className="absolute top-0 left-0 w-[3px] h-full skeleton rounded-l" />
 
-    <div className="flex items-center gap-2 mb-3">
+    <div className="flex items-center gap-3 mb-4">
       <div className="skeleton w-2 h-2 rounded-full" />
-      <div className="skeleton h-3 w-16 rounded-full" />
       <div className="skeleton h-3 w-20 rounded-full" />
+      <div className="skeleton h-3 w-24 rounded-full" />
     </div>
 
-    <div className="skeleton h-6 w-44 rounded mb-2" />
-    <div className="skeleton h-3 w-28 rounded mb-3" />
+    <div className="skeleton h-7 w-48 rounded-lg mb-2" />
+    <div className="skeleton h-3 w-32 rounded-full mb-4" />
 
-    <div className="space-y-1.5">
-      <div className="skeleton h-3 w-full rounded" />
-      <div className="skeleton h-3 w-4/5 rounded" />
+    <div className="space-y-2">
+      <div className="skeleton h-3 w-full rounded-full" />
+      <div className="skeleton h-3 w-4/5 rounded-full" />
     </div>
 
-    <div className="mt-4 pt-3 border-t border-zinc-800/30">
-      <div className="skeleton h-10 w-full rounded-lg" />
+    <div className="mt-6 pt-5 border-t border-white/5">
+      <div className="skeleton h-12 w-full rounded-xl" />
     </div>
   </div>
 );
 
 export const SkeletonGrid: React.FC<{ count?: number }> = ({ count = 6 }) => (
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
     {Array.from({ length: count }).map((_, i) => (
       <SkeletonCard key={i} />
     ))}
