@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import type { MusicMix, SearchCriteria } from '@/types';
 import { DEMO_MIXES } from '@/constants/demo-mixes';
 import { generateStrangeMixes } from '@/services/gemini';
+import { matchesCriteria } from '@/lib/mixFilters';
 
 const STORAGE_KEY = 'atlas_sonico_mixes';
 
@@ -40,60 +41,18 @@ export function useMixes() {
     songCount: 15,
   });
 
-  const filteredMixes = useMemo(() => {
-    return mixes.filter((mix) => {
-      // Continente: comparación normalizada (sin acentos)
-      if (criteria.continent) {
-        const norm = (s: string) =>
-          s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-        if (norm(mix.continent) !== norm(criteria.continent)) return false;
-      }
-
-      // País: búsqueda parcial normalizada
-      if (criteria.country) {
-        const norm = (s: string) =>
-          s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-        if (!norm(mix.country).includes(norm(criteria.country))) return false;
-      }
-
-      // Estilo: búsqueda parcial case-insensitive
-      if (criteria.style) {
-        if (!mix.style.toLowerCase().includes(criteria.style.toLowerCase())) return false;
-      }
-
-      // Década: ej. criteria.year = "1980s" → rango 1980-1989
-      if (criteria.year) {
-        const decadeMatch = criteria.year.match(/^(\d{4})/);
-        if (decadeMatch) {
-          const decadeStart = parseInt(decadeMatch[1], 10);
-          const mixYear = parseInt(mix.year, 10);
-          if (!isNaN(mixYear) && (mixYear < decadeStart || mixYear > decadeStart + 9)) return false;
-        }
-      }
-
-      // BPM: rango ej. criteria.bpm = "90-120"
-      if (criteria.bpm) {
-        const parts = criteria.bpm.split('-').map(Number);
-        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-          if (mix.bpm < parts[0] || mix.bpm > parts[1]) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [mixes, criteria]);
+  const filteredMixes = useMemo(() => mixes.filter((mix) => matchesCriteria(mix, criteria)), [mixes, criteria]);
 
   const setMixes = useCallback((updater: MusicMix[] | ((prev: MusicMix[]) => MusicMix[])) => {
-    setMixesRaw(prev => {
+    setMixesRaw((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       persistMixes(next);
       return next;
     });
   }, []);
 
-  /** Actualizar criterios parcialmente (para campos custom como songCount) */
   const updateCriteria = useCallback((updates: Partial<SearchCriteria>) => {
-    setCriteria(prev => ({ ...prev, ...updates }));
+    setCriteria((prev) => ({ ...prev, ...updates }));
   }, []);
 
   const generate = useCallback(
@@ -134,7 +93,7 @@ export function useMixes() {
 
   const handleCriteriaChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      setCriteria(prev => ({ ...prev, [e.target.name]: e.target.value }));
+      setCriteria((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     },
     []
   );

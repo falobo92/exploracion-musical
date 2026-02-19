@@ -6,6 +6,19 @@ const TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 2;
 const MODEL = 'gemini-2.0-flash';
 
+
+interface GeminiTrackResponse {
+  style?: string;
+  country?: string;
+  continent?: string;
+  artist?: string;
+  songTitle?: string;
+  year?: string | number;
+  bpm?: number | string;
+  description?: string;
+  searchQuery?: string;
+}
+
 class GeminiError extends Error {
   constructor(
     message: string,
@@ -29,11 +42,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
-  let lastError: Error | undefined;
+  let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await fn();
-    } catch (error: any) {
+    } catch (error: unknown) {
       lastError = error;
       if (error instanceof GeminiError && (error.code === 'AUTH' || error.code === 'PARSE')) {
         throw error;
@@ -44,12 +57,13 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
       }
     }
   }
-  throw lastError;
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-function classifyError(error: any): GeminiError {
+function classifyError(error: unknown): GeminiError {
   if (error instanceof GeminiError) return error;
-  const msg = String(error?.message ?? error ?? '');
+  const errorMessage = error instanceof Error ? error.message : String(error ?? '');
+  const msg = errorMessage.trim();
   if (/api.?key|auth|401|403|permission/i.test(msg))
     return new GeminiError('Clave de API inválida o sin permisos.', 'AUTH');
   if (/quota|429|rate/i.test(msg))
@@ -194,9 +208,9 @@ export async function generateStrangeMixes(
       const text = response.text?.trim();
       if (!text) throw new GeminiError('Respuesta vacía de IA.', 'PARSE');
 
-      let data: any[];
+      let data: GeminiTrackResponse[];
       try {
-        data = JSON.parse(text);
+        data = JSON.parse(text) as GeminiTrackResponse[];
       } catch {
         throw new GeminiError('JSON inválido recibido de la IA.', 'PARSE');
       }
@@ -205,7 +219,7 @@ export async function generateStrangeMixes(
         throw new GeminiError('La IA devolvió una lista vacía.', 'PARSE');
       }
 
-      return data.map((item: any, index: number): MusicMix => {
+      return data.map((item, index): MusicMix => {
         const country = String(item.country || 'Mundo');
         const continent = String(item.continent || 'Desconocido');
         const artist = String(item.artist || 'Artista Desconocido');
@@ -226,7 +240,7 @@ export async function generateStrangeMixes(
           coordinates: getCoordsForCountry(country, continent),
         };
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       throw classifyError(error);
     }
   }, MAX_RETRIES);

@@ -1,3 +1,5 @@
+import type { GoogleTokenResponse } from "@/types";
+
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 const SEARCH_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 2;
@@ -59,7 +61,7 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
 
   if (searchCache.has(cacheKey)) {
     const cached = searchCache.get(cacheKey);
-    if (cached !== null) return cached;
+    if (cached !== null && cached !== undefined) return cached;
     // Si es un fallo cacheado, comprobar TTL
     const expiry = failTTL.get(cacheKey) ?? 0;
     if (Date.now() < expiry) return null;
@@ -186,7 +188,7 @@ export function getGoogleAccessToken(clientId: string): Promise<string> {
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: 'https://www.googleapis.com/auth/youtube',
-      callback: (response: any) => {
+      callback: (response: GoogleTokenResponse) => {
         if (response.error) {
           reject(new Error(response.error_description || response.error));
         } else if (response.access_token) {
@@ -195,7 +197,7 @@ export function getGoogleAccessToken(clientId: string): Promise<string> {
           reject(new Error('No se obtuvo token de acceso.'));
         }
       },
-      error_callback: (error: any) => {
+      error_callback: (error: { message?: string }) => {
         reject(new Error(error.message || 'Error en la autenticación de Google.'));
       },
     });

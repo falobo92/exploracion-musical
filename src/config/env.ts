@@ -3,12 +3,14 @@
  * Prioridad: localStorage > import.meta.env (archivo .env)
  */
 
-const get = (localKey: string, envKey: string): string => {
+type ClientEnvKey = keyof ImportMetaEnv;
+
+const get = (localKey: string, envKey: ClientEnvKey): string => {
   if (typeof window !== 'undefined') {
     const stored = localStorage.getItem(localKey);
     if (stored) return stored;
   }
-  return (import.meta.env[envKey] as string) || '';
+  return import.meta.env[envKey] || '';
 };
 
 const set = (localKey: string, value: string) => {
