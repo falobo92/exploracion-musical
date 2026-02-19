@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Header } from './components/Header';
 import { FilterBar } from './components/FilterBar';
 import { WorldMap } from './components/WorldMap';
@@ -62,9 +62,38 @@ export default function App() {
     openSettings,
   });
 
+  const currentMixCardId = player.currentMix?.id ? `mix-card-${player.currentMix.id}` : null;
+
   const handleMapSelect = useCallback((mix: MusicMix) => {
     setSelectedMapMixId(mix.id);
   }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((prev) => !prev);
+  }, []);
+
+  const scrollToCurrent = useCallback(() => {
+    if (!currentMixCardId) return;
+    const card = document.getElementById(currentMixCardId);
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [currentMixCardId]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+      if (isTyping) return;
+
+      if (event.key.toLowerCase() === 'l') {
+        event.preventDefault();
+        toggleSidebar();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleSidebar]);
 
   // Generar mixes con IA
   const handleGenerate = useCallback(() => {
@@ -129,18 +158,24 @@ export default function App() {
           {/* Toggle lista en móvil */}
           <div className="lg:hidden">
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="w-full mt-2 mb-1 rounded-xl border border-zinc-800/50 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-300 hover:text-white hover:bg-zinc-800/60 transition-colors"
+              onClick={toggleSidebar}
+              className="w-full mt-2 mb-1 rounded-xl border border-indigo-500/20 bg-gradient-to-r from-zinc-900/80 via-zinc-900/70 to-indigo-950/40 px-3 py-2 text-xs text-zinc-200 hover:text-white hover:border-indigo-400/40 transition-all flex items-center justify-between"
               aria-label={sidebarOpen ? 'Ocultar lista de canciones' : 'Mostrar lista de canciones'}
             >
-              {sidebarOpen ? 'Ocultar lista de canciones' : 'Mostrar lista de canciones'}
+              <span className="inline-flex items-center gap-2">
+                <span className="text-indigo-300">♫</span>
+                {sidebarOpen ? 'Ocultar lista de canciones' : 'Mostrar lista de canciones'}
+              </span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full border border-zinc-700/60 bg-zinc-800/60 text-zinc-300">
+                {filteredMixes.length}
+              </span>
             </button>
           </div>
 
           {/* Botón toggle panel lateral - solo desktop */}
           <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="sidebar-toggle-btn hidden lg:flex items-center justify-center w-5 h-20 self-center rounded-lg bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/30 hover:border-zinc-600/50 text-zinc-500 hover:text-zinc-200 shrink-0"
+            onClick={toggleSidebar}
+            className="sidebar-toggle-btn hidden lg:flex items-center justify-center w-6 h-24 self-center rounded-xl bg-zinc-800/70 hover:bg-zinc-700/80 border border-zinc-700/40 hover:border-indigo-400/40 text-zinc-500 hover:text-zinc-100 shrink-0 shadow-lg shadow-black/25"
             aria-label={sidebarOpen ? 'Ocultar lista' : 'Mostrar lista'}
             title={sidebarOpen ? 'Ocultar lista de canciones' : 'Mostrar lista de canciones'}
           >
@@ -166,12 +201,23 @@ export default function App() {
                       {filteredMixes.length} canciones
                     </h3>
                   </div>
-                  <button
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className="lg:hidden text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                  >
-                    {sidebarOpen ? 'Ocultar' : 'Mostrar'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {player.currentMix && (
+                      <button
+                        onClick={scrollToCurrent}
+                        className="text-[11px] rounded-md border border-indigo-500/25 bg-indigo-500/10 px-2 py-1 text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/15 transition-colors"
+                        title="Ir a la canción sonando"
+                      >
+                        Sonando ahora
+                      </button>
+                    )}
+                    <button
+                      onClick={toggleSidebar}
+                      className="lg:hidden text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      {sidebarOpen ? 'Ocultar' : 'Mostrar'}
+                    </button>
+                  </div>
                 </div>
 
                 {loading ? (
@@ -179,14 +225,15 @@ export default function App() {
                 ) : filteredMixes.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
                     {filteredMixes.map((mix, index) => (
-                      <MixCard
-                        key={mix.id}
-                        mix={mix}
-                        onPlay={player.handlePlayCard}
-                        isPlaying={player.currentMix?.id === mix.id && player.isPlaying}
-                        isCurrent={player.currentMix?.id === mix.id}
-                        index={index}
-                      />
+                      <div key={mix.id} id={`mix-card-${mix.id}`}>
+                        <MixCard
+                          mix={mix}
+                          onPlay={player.handlePlayCard}
+                          isPlaying={player.currentMix?.id === mix.id && player.isPlaying}
+                          isCurrent={player.currentMix?.id === mix.id}
+                          index={index}
+                        />
+                      </div>
                     ))}
                   </div>
                 ) : (
