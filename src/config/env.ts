@@ -37,8 +37,16 @@ export const env = {
     set('google_client_id', value);
   },
 
+  get youtubeApiKey() {
+    return get('youtube_api_key', 'VITE_YOUTUBE_API_KEY');
+  },
+  set youtubeApiKey(value: string) {
+    set('youtube_api_key', value);
+  },
+
   clearAll() {
     localStorage.removeItem('gemini_key');
     localStorage.removeItem('google_client_id');
+    localStorage.removeItem('youtube_api_key');
   },
 };

@@ -6,14 +6,17 @@ interface SettingsModalProps {
   geminiKey: string;
   setGeminiKey: (key: string) => void;
 
+  youtubeApiKey: string;
+  setYoutubeApiKey: (key: string) => void;
+
   googleClientId: string;
   setGoogleClientId: (key: string) => void;
   onClearAll: () => void;
 }
 
-function validateKeyFormat(key: string, type: 'api' | 'client'): 'valid' | 'invalid' | 'empty' {
+function validateKeyFormat(key: string, type: 'api' | 'client' | 'youtube'): 'valid' | 'invalid' | 'empty' {
   if (!key) return 'empty';
-  if (type === 'api') {
+  if (type === 'api' || type === 'youtube') {
     return key.length >= 20 ? 'valid' : 'invalid';
   }
   // Client ID: debe contener .apps.googleusercontent.com
@@ -36,7 +39,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   geminiKey,
   setGeminiKey,
-
+  youtubeApiKey,
+  setYoutubeApiKey,
   googleClientId,
   setGoogleClientId,
   onClearAll,
@@ -46,7 +50,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   const geminiStatus = validateKeyFormat(geminiKey, 'api');
-
+  const youtubeStatus = validateKeyFormat(youtubeApiKey, 'youtube');
   const clientIdStatus = validateKeyFormat(googleClientId, 'client');
 
   const inputClass =
@@ -100,6 +104,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
           </div>
 
+          {/* YouTube API Key */}
+          <div>
+            <label className="flex items-center gap-2 text-zinc-400 text-xs uppercase font-bold mb-2 tracking-wider">
+              Clave API de YouTube Data v3
+              <StatusDot status={youtubeStatus} />
+            </label>
+            <input
+              type="password"
+              value={youtubeApiKey}
+              onChange={e => setYoutubeApiKey(e.target.value)}
+              className={inputClass}
+              placeholder="AIza..."
+            />
+            <p className="text-zinc-600 text-xs mt-1.5">
+              Para búsquedas musicales y reproducción rápida en segundo plano. No requiere login.
+            </p>
+          </div>
 
           {/* Google OAuth Client ID */}
           <div>
@@ -119,8 +140,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <br />
               <span className="text-zinc-500 text-[10px] leading-relaxed block mt-1">
                 Configura en Google Cloud Console:<br />
-                • Orígenes de JavaScript: <span className="text-indigo-400 font-mono">http://localhost:5173</span><br />
-                • URIs de redireccionamiento: <span className="text-indigo-400 font-mono">http://localhost:5173</span>
+                • Orígenes de JavaScript: <span className="text-indigo-400 font-mono">http://localhost:3000</span><br />
+                • URIs de redireccionamiento: <span className="text-indigo-400 font-mono">http://localhost:3000</span>
               </span>
             </p>
           </div>
@@ -131,8 +152,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span className="font-semibold">Tip:</span> Configura las claves en un archivo{' '}
               <code className="bg-zinc-800 px-1.5 py-0.5 rounded text-indigo-200">.env</code> en la raíz del proyecto:
             </p>
-            <pre className="text-indigo-200/70 text-[11px] mt-2 font-mono leading-relaxed">
-              {`VITE_GEMINI_API_KEY=tu_clave\nVITE_GOOGLE_CLIENT_ID=tu_client_id`}
+            <pre className="text-indigo-200/70 text-[11px] mt-2 font-mono leading-relaxed overflow-x-auto">
+              {`VITE_GEMINI_API_KEY=tu_clave\nVITE_YOUTUBE_API_KEY=tu_clave_youtube\nVITE_GOOGLE_CLIENT_ID=tu_client_id`}
             </pre>
           </div>
 

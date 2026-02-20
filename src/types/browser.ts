@@ -25,4 +25,5 @@ export interface GoogleTokenResponse {
   error?: string;
   error_description?: string;
   access_token?: string;
+  expires_in?: string | number;
 }

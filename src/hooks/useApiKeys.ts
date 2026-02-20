@@ -3,8 +3,8 @@ import { env } from '@/config/env';
 
 export function useApiKeys() {
   const [geminiKey, setGeminiKeyState] = useState<string>(env.geminiKey);
-
   const [googleClientId, setGoogleClientIdState] = useState<string>(env.googleClientId);
+  const [youtubeApiKey, setYoutubeApiKeyState] = useState<string>(env.youtubeApiKey);
 
   const setGeminiKey = (key: string) => {
     env.geminiKey = key;
@@ -17,14 +17,20 @@ export function useApiKeys() {
     setGoogleClientIdState(key);
   };
 
+  const setYoutubeApiKey = (key: string) => {
+    env.youtubeApiKey = key;
+    setYoutubeApiKeyState(key);
+  };
+
   const clearAll = () => {
     env.clearAll();
     setGeminiKeyState('');
     setGoogleClientIdState('');
+    setYoutubeApiKeyState('');
   };
 
   const hasGemini = !!geminiKey;
-  const hasGoogle = !!googleClientId; // Now dependent solely on OAuth Client ID
+  const hasYoutubeKey = !!youtubeApiKey;
   const hasClientId = !!googleClientId;
 
   return {
@@ -33,9 +39,13 @@ export function useApiKeys() {
 
     googleClientId,
     setGoogleClientId,
+
+    youtubeApiKey,
+    setYoutubeApiKey,
+
     clearAll,
     hasGemini,
-    hasGoogle,
+    hasYoutubeKey,
     hasClientId,
   };
 }

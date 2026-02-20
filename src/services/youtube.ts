@@ -1,6 +1,6 @@
 import type { GoogleTokenResponse } from "@/types";
 
-const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
+const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 const SEARCH_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 2;
 
@@ -13,11 +13,11 @@ const FAIL_TTL_MS = 5 * 60 * 1000;
 class YouTubeError extends Error {
   constructor(
     message: string,
-    public code: 'AUTH' | 'QUOTA' | 'NETWORK' | 'NOT_FOUND' | 'UNKNOWN',
-    public status?: number
+    public code: "AUTH" | "QUOTA" | "NETWORK" | "NOT_FOUND" | "UNKNOWN",
+    public status?: number,
   ) {
     super(message);
-    this.name = 'YouTubeError';
+    this.name = "YouTubeError";
   }
 }
 
@@ -25,7 +25,11 @@ function isRetryable(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = SEARCH_TIMEOUT_MS): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = SEARCH_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -42,10 +46,10 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
       return await fn();
     } catch (error: any) {
       lastError = error;
-      if (error instanceof YouTubeError && error.code === 'AUTH') throw error;
+      if (error instanceof YouTubeError && error.code === "AUTH") throw error;
       if (attempt < retries) {
         const delay = Math.min(1000 * 2 ** attempt, 4000);
-        await new Promise(r => setTimeout(r, delay));
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
   }
@@ -56,10 +60,13 @@ let cachedAccessToken: string | null = null;
 let tokenExpiryTime: number = 0;
 
 /**
- * Busca un video en YouTube usando un token de OAuth.
+ * Busca un video en YouTube usando un API Key.
  * Incluye caché en memoria para evitar búsquedas duplicadas.
  */
-export async function searchVideoWithToken(query: string, accessToken: string): Promise<string | null> {
+export async function searchVideo(
+  query: string,
+  auth: { apiKey?: string; token?: string },
+): Promise<string | null> {
   const cacheKey = query.toLowerCase().trim();
 
   if (searchCache.has(cacheKey)) {
@@ -77,18 +84,49 @@ export async function searchVideoWithToken(query: string, accessToken: string): 
     try {
       // Sin videoCategoryId para no filtrar videos musicales válidos; maxResults=3 para mejor selección
       // Se optimiza el query para encontrar el audio oficial
-      const finalQuery = `${query}`; // El query ya viene formateado desde Gemini como "Artist - Title (Official Audio)"
-      const url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(finalQuery)}&maxResults=5&type=video&videoEmbeddable=true`;
-      const response = await fetchWithTimeout(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const finalQuery = `${query}`;
+      // NUNCA enviar ambos. Si hay token, se prefiere el token en el header y NO se envía la key en la URL.
+      const useApiKey = auth.apiKey && !auth.token;
+      const url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(finalQuery)}&maxResults=5&type=video&videoEmbeddable=true${useApiKey ? `&key=${auth.apiKey}` : ""}`;
+      const headers = auth.token
+        ? { Authorization: `Bearer ${auth.token}` }
+        : undefined;
+      const response = await fetchWithTimeout(url, { headers });
 
       if (!response.ok) {
-        if (response.status === 403 || response.status === 401) {
-          throw new YouTubeError('Clave de API inválida o sin permisos.', 'AUTH', response.status);
+        if (response.status === 403) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("[YouTube] Error 403:", errorData);
+          const reason = errorData.error?.errors?.[0]?.reason;
+          if (
+            reason === "accessNotConfigured" ||
+            reason === "dailyLimitExceeded"
+          ) {
+            throw new YouTubeError(
+              `YouTube API no habilitada o cuota agotada (${reason}).`,
+              "QUOTA",
+              403,
+            );
+          }
+          throw new YouTubeError(
+            "Sin permisos de YouTube o Clave API inválida.",
+            "AUTH",
+            403,
+          );
+        }
+        if (response.status === 401) {
+          throw new YouTubeError(
+            "Sesión de Google expirada o token inválido.",
+            "AUTH",
+            401,
+          );
         }
         if (isRetryable(response.status)) {
-          throw new YouTubeError(`Error ${response.status}`, 'QUOTA', response.status);
+          throw new YouTubeError(
+            `Error ${response.status}`,
+            "QUOTA",
+            response.status,
+          );
         }
         searchCache.set(cacheKey, null);
         failTTL.set(cacheKey, Date.now() + FAIL_TTL_MS);
@@ -100,10 +138,28 @@ export async function searchVideoWithToken(query: string, accessToken: string): 
 
       // Seleccionar el mejor resultado: priorizar los que contengan palabras del query en el título
       // y términos de calidad (official, audio, high quality)
-      const queryWords = query.toLowerCase().replace(/\(official audio\)/g, '').split(/[\s\-–]+/).filter(w => w.length > 2);
-      const qualityTerms = ['official', 'audio', 'video oficial', 'lyric', 'topic'];
-      const negativeTerms = ['reaction', 'review', 'cover', 'tutorial', 'karaoke', 'instrumental', 'remix'];
-      
+      const queryWords = query
+        .toLowerCase()
+        .replace(/\(official audio\)/g, "")
+        .split(/[\s\-–]+/)
+        .filter((w) => w.length > 2);
+      const qualityTerms = [
+        "official",
+        "audio",
+        "video oficial",
+        "lyric",
+        "topic",
+      ];
+      const negativeTerms = [
+        "reaction",
+        "review",
+        "cover",
+        "tutorial",
+        "karaoke",
+        "instrumental",
+        "remix",
+      ];
+
       let bestId: string | null = null;
       let bestScore = -100;
 
@@ -111,36 +167,50 @@ export async function searchVideoWithToken(query: string, accessToken: string): 
         const videoId = item.id?.videoId;
         if (!videoId) continue;
 
-        const title = (item.snippet?.title ?? '').toLowerCase();
-        const channelTitle = (item.snippet?.channelTitle ?? '').toLowerCase();
-        const description = (item.snippet?.description ?? '').toLowerCase();
-        
+        const title = (item.snippet?.title ?? "").toLowerCase();
+        const channelTitle = (item.snippet?.channelTitle ?? "").toLowerCase();
+        const description = (item.snippet?.description ?? "").toLowerCase();
+
         // Puntuación base por coincidencia de palabras del query
-        let score = queryWords.reduce((s: number, w: string) => s + (title.includes(w) ? 3 : 0), 0);
-        
+        let score = queryWords.reduce(
+          (s: number, w: string) => s + (title.includes(w) ? 3 : 0),
+          0,
+        );
+
         // Bonus por términos de calidad
-        score += qualityTerms.reduce((s: number, w: string) => s + (title.includes(w) ? 2 : 0), 0);
-        
+        score += qualityTerms.reduce(
+          (s: number, w: string) => s + (title.includes(w) ? 2 : 0),
+          0,
+        );
+
         // Penalización fuerte por términos negativos (a menos que estén en el query original)
-        const isCoverRequested = query.toLowerCase().includes('cover');
-        const isRemixRequested = query.toLowerCase().includes('remix');
+        const isCoverRequested = query.toLowerCase().includes("cover");
+        const isRemixRequested = query.toLowerCase().includes("remix");
 
         if (!isCoverRequested) {
-            score -= negativeTerms.reduce((s: number, w: string) => s + (title.includes(w) ? 5 : 0), 0);
+          score -= negativeTerms.reduce(
+            (s: number, w: string) => s + (title.includes(w) ? 5 : 0),
+            0,
+          );
         }
-        if (!isRemixRequested && title.includes('remix')) {
-             score -= 3;
+        if (!isRemixRequested && title.includes("remix")) {
+          score -= 3;
         }
 
         // Bonus por canales que suelen ser oficiales o de alta calidad
-        if (channelTitle.includes('topic') || channelTitle.includes('official') || channelTitle.includes('vevo')) {
+        if (
+          channelTitle.includes("topic") ||
+          channelTitle.includes("official") ||
+          channelTitle.includes("vevo")
+        ) {
           score += 4;
         }
-        
+
         // Preferir videos que NO sean muy cortos (shorts/previews) ni muy largos (full albums)
         // Nota: La API de search no devuelve duración, así que confiamos en título/descripción
-        if (title.includes('full album') || title.includes('completo')) score -= 2;
-        if (title.includes('preview') || title.includes('teaser')) score -= 5;
+        if (title.includes("full album") || title.includes("completo"))
+          score -= 2;
+        if (title.includes("preview") || title.includes("teaser")) score -= 5;
 
         if (score > bestScore) {
           bestScore = score;
@@ -162,21 +232,35 @@ export async function searchVideoWithToken(query: string, accessToken: string): 
       return bestId;
     } catch (error: any) {
       if (error instanceof YouTubeError) throw error;
-      if (error.name === 'AbortError') {
-        throw new YouTubeError('Timeout en la búsqueda.', 'NETWORK');
+      if (error.name === "AbortError") {
+        throw new YouTubeError("Timeout en la búsqueda.", "NETWORK");
       }
-      throw new YouTubeError(error.message || 'Error de red.', 'NETWORK');
+      throw new YouTubeError(error.message || "Error de red.", "NETWORK");
     }
   }, MAX_RETRIES);
 }
 
+export async function searchVideoWithApiKey(
+  query: string,
+  apiKey: string,
+): Promise<string | null> {
+  return searchVideo(query, { apiKey });
+}
+
+export async function searchVideoWithToken(
+  query: string,
+  token: string,
+): Promise<string | null> {
+  return searchVideo(query, { token });
+}
+
 /**
- * Busca videos en lote con concurrencia limitada.
+ * Busca videos en lote con concurrencia limitada (usando API Key).
  */
 export async function batchSearchVideos(
   queries: { index: number; query: string }[],
-  accessToken: string,
-  concurrency = 3
+  apiKey: string,
+  concurrency = 3,
 ): Promise<Map<number, string>> {
   const results = new Map<number, string>();
   const queue = [...queries];
@@ -185,17 +269,20 @@ export async function batchSearchVideos(
     while (queue.length > 0) {
       const item = queue.shift()!;
       try {
-        const videoId = await searchVideoWithToken(item.query, accessToken);
+        const videoId = await searchVideoWithApiKey(item.query, apiKey);
         if (videoId) results.set(item.index, videoId);
       } catch {
         // Continuar con el siguiente
       }
       // Rate limiting entre búsquedas
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 100));
     }
   }
 
-  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, () => worker());
+  const workers = Array.from(
+    { length: Math.min(concurrency, queue.length) },
+    () => worker(),
+  );
   await Promise.allSettled(workers);
   return results;
 }
@@ -204,34 +291,46 @@ export async function batchSearchVideos(
  * Obtiene un access token de Google usando OAuth 2.0.
  * Utiliza un caché en memoria validando la expiración.
  */
-export async function getGoogleAccessToken(clientId: string, forceRefresh = false): Promise<string> {
+export async function getGoogleAccessToken(
+  clientId: string,
+  forceRefresh = false,
+): Promise<string> {
   if (!forceRefresh && cachedAccessToken && Date.now() < tokenExpiryTime) {
     return cachedAccessToken;
   }
 
   return new Promise((resolve, reject) => {
     if (!window.google?.accounts?.oauth2) {
-      reject(new Error('Google Identity Services no está cargado. Recarga la página.'));
+      reject(
+        new Error(
+          "Google Identity Services no está cargado. Recarga la página.",
+        ),
+      );
       return;
     }
 
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/youtube',
+      scope:
+        "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email",
       callback: (response: GoogleTokenResponse) => {
         if (response.error) {
           reject(new Error(response.error_description || response.error));
         } else if (response.access_token) {
           cachedAccessToken = response.access_token;
-          const expiresIn = response.expires_in ? Number(response.expires_in) : 3599;
+          const expiresIn = response.expires_in
+            ? Number(response.expires_in)
+            : 3599;
           tokenExpiryTime = Date.now() + (expiresIn - 300) * 1000; // 5 minutos de margen
           resolve(response.access_token);
         } else {
-          reject(new Error('No se obtuvo token de acceso.'));
+          reject(new Error("No se obtuvo token de acceso."));
         }
       },
       error_callback: (error: { message?: string }) => {
-        reject(new Error(error.message || 'Error en la autenticación de Google.'));
+        reject(
+          new Error(error.message || "Error en la autenticación de Google."),
+        );
       },
     });
 
@@ -245,27 +344,27 @@ export async function getGoogleAccessToken(clientId: string, forceRefresh = fals
 export async function createYouTubePlaylist(
   accessToken: string,
   title: string,
-  description: string
+  description: string,
 ): Promise<string> {
   const response = await fetchWithTimeout(
     `${YOUTUBE_API_BASE}/playlists?part=snippet,status`,
     {
-      method: 'POST',
+      method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         snippet: { title, description },
-        status: { privacyStatus: 'private' },
+        status: { privacyStatus: "private" },
       }),
     },
-    15_000
+    15_000,
   );
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || 'Error creando la playlist.');
+    throw new Error(err.error?.message || "Error creando la playlist.");
   }
 
   const data = await response.json();
@@ -278,25 +377,25 @@ export async function createYouTubePlaylist(
 export async function addVideoToPlaylist(
   accessToken: string,
   playlistId: string,
-  videoId: string
+  videoId: string,
 ): Promise<boolean> {
   try {
     const response = await fetchWithTimeout(
       `${YOUTUBE_API_BASE}/playlistItems?part=snippet`,
       {
-        method: 'POST',
+        method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           snippet: {
             playlistId,
-            resourceId: { kind: 'youtube#video', videoId },
+            resourceId: { kind: "youtube#video", videoId },
           },
         }),
       },
-      15_000
+      15_000,
     );
 
     return response.ok;

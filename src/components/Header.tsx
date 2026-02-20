@@ -3,12 +3,12 @@ import React from 'react';
 interface HeaderProps {
   onOpenSettings: () => void;
   hasGemini: boolean;
-  hasGoogle: boolean;
+  hasYoutubeKey: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenSettings, hasGemini, hasGoogle }) => (
-  <header className="fixed top-0 left-0 right-0 z-40 bg-zinc-950/80 backdrop-blur-2xl border-b border-zinc-800/30">
-    <div className="max-w-[1920px] mx-auto px-3 sm:px-6 py-2 sm:py-2.5 flex justify-between items-center">
+export const Header: React.FC<HeaderProps> = ({ onOpenSettings, hasGemini, hasYoutubeKey }) => (
+  <header className="glass-panel mx-auto max-w-7xl rounded-2xl">
+    <div className="px-4 sm:px-6 py-3 flex justify-between items-center">
       <div className="flex items-center gap-3">
         {/* Logo con gradiente animado */}
         <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg header-gradient flex items-center justify-center shadow-lg shadow-indigo-500/25 relative">
@@ -46,12 +46,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSettings, hasGemini, hasGo
             Gemini
           </div>
           <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium border transition-all ${
-            hasGoogle
+            hasYoutubeKey
               ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
               : 'text-zinc-600 bg-zinc-800/40 border-zinc-800/60'
           }`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${hasGoogle ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
-            YouTube
+            <div className={`w-1.5 h-1.5 rounded-full ${hasYoutubeKey ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+            YouTube API
           </div>
         </div>
 

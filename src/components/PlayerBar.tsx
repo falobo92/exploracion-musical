@@ -99,10 +99,12 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         } else {
           if (audioRetryCountRef.current < 2) {
             audioRetryCountRef.current += 1;
+            console.log(`[Player] Falló audio proxy para ${videoId}, reintentando ${audioRetryCountRef.current}...`);
             retryTimeout = setTimeout(() => {
               setAudioRetryToken(t => t + 1);
             }, 450);
           } else {
+            console.warn(`[Player] Audio proxy falló permanentemente para ${videoId}. Usando YT como fallback.`);
             setAudioFailed(true);
           }
         }
@@ -177,17 +179,19 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
       playerRef.current = new window.YT.Player('yt-player-element', {
         width: '100%',
         height: '100%',
-        playerVars: {
-          autoplay: 0,
-          rel: 0,
-          modestbranding: 1,
-          playsinline: 1,
-          controls: 0,
-          fs: 0,
-          disablekb: 1,
-          iv_load_policy: 3,
-          origin: window.location.origin,
-        },
+          playerVars: {
+            autoplay: 0,
+            rel: 0,
+            modestbranding: 1,
+            playsinline: 1,
+            controls: 0,
+            fs: 0,
+            disablekb: 1,
+            iv_load_policy: 3,
+            origin: window.location.origin,
+            enablejsapi: 1,
+            widget_referrer: window.location.origin,
+          },
         events: {
           onReady: () => {
             setPlayerReady(true);
@@ -228,11 +232,21 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   useEffect(() => {
     if (!playerReady || !playerRef.current || !videoId) return;
     if (audioFailed && !useNativeAudio) {
+      console.log(`[Player] Cargando video en YT IFrame: ${videoId}`);
       try {
-        playerRef.current.loadVideoById(videoId);
-      } catch (_) {}
+        playerRef.current.cueVideoById(videoId);
+        if (isPlaying) {
+          setTimeout(() => {
+            if (playerRef.current && isPlayingRef.current) {
+              playerRef.current.playVideo();
+            }
+          }, 300);
+        }
+      } catch (e) {
+        console.error('[Player] Error cargando video YT:', e);
+      }
     }
-  }, [videoId, playerReady, audioFailed, useNativeAudio]);
+  }, [videoId, playerReady, audioFailed, useNativeAudio]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====================================================================
   // CONTROLES UNIFICADOS: Play/Pause, Seek, Volume
@@ -246,9 +260,19 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
       else audioRef.current.pause();
     } else if (playerReady && playerRef.current && audioFailed) {
       try {
-        if (isPlaying) playerRef.current.playVideo();
-        else playerRef.current.pauseVideo();
-      } catch (_) {}
+        const state = playerRef.current.getPlayerState?.();
+        if (isPlaying) {
+          if (state !== window.YT.PlayerState.PLAYING) {
+            playerRef.current.playVideo();
+          }
+        } else {
+          if (state === window.YT.PlayerState.PLAYING || state === window.YT.PlayerState.BUFFERING) {
+            playerRef.current.pauseVideo();
+          }
+        }
+      } catch (e) {
+        console.warn('[Player] Error enviando comando play/pause a YT:', e);
+      }
     }
   }, [isPlaying, playerReady, useNativeAudio, audioFailed]);
 
@@ -457,25 +481,23 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         }}
       />
 
-      {/* Spacer para que el contenido no quede detrás del player fijo */}
-      {isVisible && <div className="h-[144px] sm:h-[120px]" />}
-
-      <div className={`fixed bottom-0 left-0 right-0 z-50 transition-all duration-500 ease-out ${
-        isVisible ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
+      {/* El PlayerBar en sí, App.tsx se encarga de posicionarlo en fixed */}
+      <div className={`w-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] origin-bottom ${
+        isVisible ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-12 opacity-0 scale-95 pointer-events-none'
       }`}>
-        {/* Top progress bar */}
-        <div className="h-1 bg-zinc-900 cursor-pointer group hover:h-1.5 transition-all" onClick={handleSeek}>
-          <div
-            className="h-full relative transition-all duration-200 progress-glow"
-            style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}, #8b5cf6)` }}
-          >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform" />
+        <div className="player-glass rounded-[2.5rem] overflow-hidden">
+          {/* Top progress bar */}
+          <div className="h-1 bg-white/5 cursor-pointer group hover:h-1.5 transition-all relative z-10" onClick={handleSeek}>
+            <div
+              className="h-full relative transition-all duration-200 progress-glow"
+              style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}, #8b5cf6)` }}
+            >
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform" />
+            </div>
           </div>
-        </div>
 
-        <div className="player-glass player-safe-area">
-          <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
-            <div className="flex items-center gap-3 sm:gap-4">
+          <div className="px-4 py-3 sm:py-3.5 w-full">
+            <div className="flex items-center gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
 
               {/* YouTube iframe (fallback) — siempre oculto cuando audio nativo está activo, y opcional cuando no */}
               <div
@@ -609,12 +631,12 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                     </div>
                   </>
                 )}
-                {/* Progress bar */}
-                <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500">
+                {/* Progress bar inside controls */}
+                <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-400 mt-1">
                   <span className="w-8 text-right tabular-nums hidden sm:inline">{formatTime(currentTime)}</span>
-                  <div className="flex-1 h-1 bg-zinc-800/80 rounded-full overflow-hidden cursor-pointer" onClick={handleSeek}>
+                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden cursor-pointer shadow-inner" onClick={handleSeek}>
                     <div className="h-full rounded-full transition-all duration-200"
-                      style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}aa, #8b5cf6aa)` }} />
+                      style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}dd, #8b5cf6dd)` }} />
                   </div>
                   <span className="w-8 tabular-nums hidden sm:inline">{formatTime(duration)}</span>
                   <span className="text-[9px] tabular-nums sm:hidden">{formatTime(currentTime)}</span>
@@ -622,7 +644,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
               </div>
 
               {/* === CONTROLS === */}
-              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 md:ml-4 w-full sm:w-auto">
                 {/* Shuffle */}
                 <button
                   onClick={onToggleShuffle}

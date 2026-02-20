@@ -19,10 +19,10 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
 
   return (
     <div
-      className={`animate-card-enter relative rounded-xl flex flex-col justify-between h-full transition-all duration-200 group cursor-pointer overflow-hidden ${
+      className={`animate-card-enter relative rounded-[1.25rem] flex flex-col justify-between h-full group cursor-pointer overflow-hidden transition-all duration-500 ${
         isCurrent
-          ? 'bg-zinc-900 border border-indigo-500/50 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/20'
-          : 'bg-zinc-900/70 border border-zinc-800/50 hover:border-zinc-700/70 hover:bg-zinc-800/50 hover:shadow-lg hover:shadow-black/20'
+          ? 'glass-card bg-gradient-to-br from-indigo-500/15 to-purple-500/5 border-indigo-500/40 shadow-[0_8px_32px_rgba(99,102,241,0.2)] ring-1 ring-indigo-500/50 scale-[1.02] z-10'
+          : 'glass-card hover:bg-white/5 hover:border-white/20 hover:shadow-[0_8px_32px_rgba(255,255,255,0.05)] hover:-translate-y-1'
       }`}
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={() => onPlay(mix)}
@@ -64,23 +64,23 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
         {/* Header: continent dot + tags */}
         <div className="flex items-center gap-2 mb-3">
           <div
-            className="w-2 h-2 rounded-full shrink-0"
+            className="w-2.5 h-2.5 rounded-full shrink-0"
             style={{ background: style.markerColor, boxShadow: `0 0 8px ${style.markerColor}40` }}
           />
-          <span className={`text-[10px] font-semibold tracking-wider uppercase ${style.textClass}`}>
+          <span className={`text-xs font-semibold tracking-wider uppercase ${style.textClass}`}>
             {mix.continent}
           </span>
-          <span className="text-zinc-600 text-[10px]">·</span>
-          <span className="text-[10px] font-medium tracking-wide uppercase text-zinc-500">
+          <span className="text-zinc-600 text-xs">·</span>
+          <span className="text-xs font-medium tracking-wide uppercase text-zinc-400">
             {mix.country}
           </span>
         </div>
 
         {/* Artista */}
-        <div className="flex items-center gap-2 mb-0.5">
+        <div className="flex items-center gap-2 mb-1">
           <h3
-            className={`text-lg font-bold transition-colors leading-tight ${
-              isCurrent ? 'text-indigo-300' : 'text-white group-hover:text-indigo-200'
+            className={`text-2xl font-extrabold transition-colors duration-300 leading-tight tracking-tight ${
+              isCurrent ? 'text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-purple-300 glow-text' : 'text-zinc-100 group-hover:text-white'
             }`}
           >
             {mix.artist}
@@ -97,31 +97,31 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
 
         {/* Canción */}
         {mix.songTitle && (
-          <p className="text-indigo-300/70 text-sm italic mb-1.5 truncate">{mix.songTitle}</p>
+          <p className={`text-base font-medium mb-2 truncate transition-colors duration-300 ${isCurrent ? 'text-indigo-200/90' : 'text-zinc-300 group-hover:text-indigo-200/80'}`}>{mix.songTitle}</p>
         )}
 
         {/* Style + BPM + Year */}
-        <div className="text-zinc-500 text-xs font-mono mb-2.5 flex items-center gap-1.5">
-          <span className="text-zinc-400 font-semibold">{mix.year}</span>
-          <span className="text-zinc-700">·</span>
+        <div className="text-zinc-400 text-[13px] font-mono mb-3 flex items-center gap-1.5">
+          <span className="text-zinc-300 font-semibold">{mix.year}</span>
+          <span className="text-zinc-600">·</span>
           <span>{mix.style}</span>
-          <span className="text-zinc-700">·</span>
+          <span className="text-zinc-600">·</span>
           <span>{mix.bpm} BPM</span>
         </div>
 
         {/* Description */}
-        <p className="text-zinc-400 text-[13px] leading-relaxed line-clamp-3">{mix.description}</p>
+        <p className="text-zinc-300 text-[15px] leading-relaxed line-clamp-6">{mix.description}</p>
       </div>
 
       {/* Play button */}
-      <div className="relative px-5 pl-6 pb-4 pt-0">
-        <div className="border-t border-zinc-800/40 pt-3">
+      <div className="relative px-5 pl-6 pb-5 pt-0 mt-auto">
+        <div className="pt-3">
           <button
             onClick={e => { e.stopPropagation(); onPlay(mix); }}
-            className={`w-full text-center text-xs font-semibold py-2.5 px-3 rounded-lg transition-all flex items-center justify-center gap-2 ${
+            className={`w-full text-center text-sm font-bold py-3 px-4 rounded-full transition-all duration-300 flex items-center justify-center gap-2 ${
               isCurrent && isPlaying
-                ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/25'
-                : 'bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-400 hover:text-white border border-transparent'
+                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex shadow-[0_0_15px_rgba(99,102,241,0.3)]'
+                : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 hover:border-white/20 hover:shadow-[0_5px_15px_rgba(0,0,0,0.3)]'
             }`}
           >
             {isCurrent && isPlaying ? (

@@ -95,58 +95,60 @@ export default function App() {
   }, [savedSearches.save, notify]);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans flex flex-col overflow-x-hidden">
-      <Header onOpenSettings={openSettings} hasGemini={apiKeys.hasGemini} hasGoogle={apiKeys.hasGoogle} />
+    <div className="fixed inset-0 bg-zinc-950 text-zinc-100 font-sans overflow-hidden">
+      {/* Background Map Layer */}
+      <WorldMap
+        mixes={filteredMixes}
+        onSelect={handleMapSelect}
+        onPlay={player.handlePlayCard}
+        selectedId={selectedMapMixId}
+        playingId={player.currentMix?.id}
+        className="map-container-wrapper"
+      />
 
-      <main className="flex-1 flex flex-col px-3 sm:px-6 py-3 sm:py-4 pt-[60px] sm:pt-[64px] max-w-[1920px] mx-auto w-full">
-        <FilterBar
-          criteria={criteria}
-          onChange={handleCriteriaChange}
-          onUpdateCriteria={updateCriteria}
-          onGenerate={handleGenerate}
-          onPlayAll={player.handlePlayAll}
-          onSavePlaylist={playlist.save}
-          onExport={() => setIsExportOpen(true)}
-          onOpenSavedSearches={() => setIsSavedSearchesOpen(true)}
-          savedSearchCount={savedSearches.savedSearches.length}
-          loading={loading}
-          isSavingPlaylist={playlist.isSaving}
-          resultCount={filteredMixes.length}
-          totalCount={mixes.length}
-          hasMixes={filteredMixes.length > 0}
-        />
-
-        {/* Contenido principal: Mapa + Lista lateral */}
-        <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
-          {/* Mapa */}
-          <div className="min-w-0 lg:flex-1">
-            <WorldMap
-              mixes={filteredMixes}
-              onSelect={handleMapSelect}
-              onPlay={player.handlePlayCard}
-              selectedId={selectedMapMixId}
-              playingId={player.currentMix?.id}
-              className="w-full h-[42dvh] min-h-[260px] max-h-[480px] sm:h-[400px] sm:max-h-none lg:h-full rounded-2xl overflow-hidden border border-zinc-800/40 shadow-2xl shadow-black/20 relative z-0"
+      {/* Foreground UI Layer (pointer-events-none so map can be interacted with) */}
+      <div className="absolute inset-0 z-10 pointer-events-none flex flex-col">
+        {/* Top Area: Header + FilterBar */}
+        <div className="pointer-events-none pt-4 px-4 sm:px-6 max-w-[1920px] mx-auto w-full flex flex-col gap-4 z-20">
+          <div className="pointer-events-auto">
+            <Header onOpenSettings={openSettings} hasGemini={apiKeys.hasGemini} hasYoutubeKey={apiKeys.hasYoutubeKey} />
+          </div>
+          <div className="pointer-events-auto">
+            <FilterBar
+              criteria={criteria}
+              onChange={handleCriteriaChange}
+              onUpdateCriteria={updateCriteria}
+              onGenerate={handleGenerate}
+              onPlayAll={player.handlePlayAll}
+              onSavePlaylist={playlist.save}
+              onExport={() => setIsExportOpen(true)}
+              onOpenSavedSearches={() => setIsSavedSearchesOpen(true)}
+              savedSearchCount={savedSearches.savedSearches.length}
+              loading={loading}
+              isSavingPlaylist={playlist.isSaving}
+              resultCount={filteredMixes.length}
+              totalCount={mixes.length}
+              hasMixes={filteredMixes.length > 0}
             />
           </div>
+        </div>
 
-          {/* Panel lateral de canciones */}
-          <div className="lg:w-[38%] xl:w-[34%] lg:flex-shrink-0">
-            <div className="max-h-[65vh] overflow-y-auto pr-1 scrollbar-thin lg:max-h-[calc(100vh-320px)]">
+        {/* Main Area: Mix List floating on the right */}
+        <main className="flex-1 flex flex-col pointer-events-none p-4 sm:p-6 pb-32 max-w-[1920px] mx-auto w-full min-h-0 items-end justify-start">
+            <div className="pointer-events-auto w-full lg:w-[400px] xl:w-[440px] flex flex-col glass-panel rounded-[2rem] overflow-hidden max-h-full shadow-2xl relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 pointer-events-none" />
               {/* Header del panel */}
-              <div className="flex items-center justify-between mb-3 sticky top-0 z-10 bg-zinc-950/90 backdrop-blur-sm py-2 -mt-2">
+              <div className="relative flex items-center justify-between p-5 pb-4 border-b border-white/5 bg-zinc-950/30 backdrop-blur-xl z-10">
                 <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                  </svg>
-                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
+                  <div className="w-1.5 h-4 rounded-full bg-gradient-to-b from-indigo-400 to-purple-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
+                  <h3 className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-zinc-100 to-zinc-400 uppercase tracking-widest">
                     {filteredMixes.length} canciones
                   </h3>
                 </div>
                 {player.currentMix && (
                   <button
                     onClick={scrollToCurrent}
-                    className="text-[11px] rounded-md border border-indigo-500/25 bg-indigo-500/10 px-2 py-1 text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/15 transition-colors"
+                    className="text-[10px] uppercase font-bold tracking-wider rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-indigo-300 hover:text-white hover:bg-indigo-500/20 transition-all shadow-[0_0_10px_rgba(99,102,241,0.2)] hover:shadow-[0_0_15px_rgba(99,102,241,0.4)]"
                     title="Ir a la canción sonando"
                   >
                     Sonando ahora
@@ -154,51 +156,58 @@ export default function App() {
                 )}
               </div>
 
-              {loading ? (
-                <SkeletonGrid count={6} />
-              ) : filteredMixes.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
-                  {filteredMixes.map((mix, index) => (
-                    <div key={mix.id} id={`mix-card-${mix.id}`}>
-                      <MixCard
-                        mix={mix}
-                        onPlay={player.handlePlayCard}
-                        isPlaying={player.currentMix?.id === mix.id && player.isPlaying}
-                        isCurrent={player.currentMix?.id === mix.id}
-                        index={index}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState onGenerate={handleGenerate} onOpenSettings={openSettings} hasApiKey={apiKeys.hasGemini} />
-              )}
+              {/* Lista scrollable */}
+              <div className="relative flex-1 overflow-y-auto p-4 sm:p-5 scrollbar-thin z-10">
+                {loading ? (
+                  <SkeletonGrid count={6} />
+                ) : filteredMixes.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-3">
+                    {filteredMixes.map((mix, index) => (
+                      <div key={mix.id} id={`mix-card-${mix.id}`}>
+                        <MixCard
+                          mix={mix}
+                          onPlay={player.handlePlayCard}
+                          isPlaying={player.currentMix?.id === mix.id && player.isPlaying}
+                          isCurrent={player.currentMix?.id === mix.id}
+                          index={index}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState onGenerate={handleGenerate} onOpenSettings={openSettings} hasApiKey={apiKeys.hasGemini} />
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      </main>
+        </main>
+      </div>
 
-      <PlayerBar
-        currentMix={player.currentMix}
-        isPlaying={player.isPlaying}
-        onPlayPause={() => player.setIsPlaying(!player.isPlaying)}
-        onPlay={() => player.setIsPlaying(true)}
-        onPause={() => player.setIsPlaying(false)}
-        onNext={player.handleNext}
-        onPrev={player.handlePrev}
-        videoId={player.currentMix?.videoId}
-        onVideoEnd={player.handleNext}
-        currentIndex={player.currentIndex}
-        totalTracks={filteredMixes.length}
-        shuffle={player.shuffle}
-        onToggleShuffle={() => player.setShuffle(!player.shuffle)}
-      />
+      {/* Floating Bottom Player */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] sm:w-auto z-50">
+        <PlayerBar
+          currentMix={player.currentMix}
+          isPlaying={player.isPlaying}
+          onPlayPause={() => player.setIsPlaying(!player.isPlaying)}
+          onPlay={() => player.setIsPlaying(true)}
+          onPause={() => player.setIsPlaying(false)}
+          onNext={player.handleNext}
+          onPrev={player.handlePrev}
+          videoId={player.currentMix?.videoId}
+          onVideoEnd={player.handleNext}
+          currentIndex={player.currentIndex}
+          totalTracks={filteredMixes.length}
+          shuffle={player.shuffle}
+          onToggleShuffle={() => player.setShuffle(!player.shuffle)}
+        />
+      </div>
 
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         geminiKey={apiKeys.geminiKey}
         setGeminiKey={apiKeys.setGeminiKey}
+        youtubeApiKey={apiKeys.youtubeApiKey}
+        setYoutubeApiKey={apiKeys.setYoutubeApiKey}
         googleClientId={apiKeys.googleClientId}
         setGoogleClientId={apiKeys.setGoogleClientId}
         onClearAll={apiKeys.clearAll}
