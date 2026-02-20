@@ -29,12 +29,6 @@ export const env = {
     set('gemini_key', value);
   },
 
-  get googleKey() {
-    return get('google_key', 'VITE_GOOGLE_API_KEY');
-  },
-  set googleKey(value: string) {
-    set('google_key', value);
-  },
 
   get googleClientId() {
     return get('google_client_id', 'VITE_GOOGLE_CLIENT_ID');
@@ -45,7 +39,6 @@ export const env = {
 
   clearAll() {
     localStorage.removeItem('gemini_key');
-    localStorage.removeItem('google_key');
     localStorage.removeItem('google_client_id');
   },
 };

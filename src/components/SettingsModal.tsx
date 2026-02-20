@@ -5,8 +5,7 @@ interface SettingsModalProps {
   onClose: () => void;
   geminiKey: string;
   setGeminiKey: (key: string) => void;
-  googleKey: string;
-  setGoogleKey: (key: string) => void;
+
   googleClientId: string;
   setGoogleClientId: (key: string) => void;
   onClearAll: () => void;
@@ -25,9 +24,8 @@ const StatusDot: React.FC<{ status: 'valid' | 'invalid' | 'empty' }> = ({ status
   if (status === 'empty') return null;
   return (
     <div
-      className={`w-2 h-2 rounded-full shrink-0 ${
-        status === 'valid' ? 'bg-emerald-400' : 'bg-amber-400'
-      }`}
+      className={`w-2 h-2 rounded-full shrink-0 ${status === 'valid' ? 'bg-emerald-400' : 'bg-amber-400'
+        }`}
       title={status === 'valid' ? 'Formato válido' : 'Formato inusual'}
     />
   );
@@ -38,8 +36,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   geminiKey,
   setGeminiKey,
-  googleKey,
-  setGoogleKey,
+
   googleClientId,
   setGoogleClientId,
   onClearAll,
@@ -49,7 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   const geminiStatus = validateKeyFormat(geminiKey, 'api');
-  const googleStatus = validateKeyFormat(googleKey, 'api');
+
   const clientIdStatus = validateKeyFormat(googleClientId, 'client');
 
   const inputClass =
@@ -103,25 +100,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
           </div>
 
-          {/* Google Cloud API Key */}
-          <div>
-            <label className="flex items-center gap-2 text-zinc-400 text-xs uppercase font-bold mb-2 tracking-wider">
-              Clave API de Google Cloud
-              <StatusDot status={googleStatus} />
-            </label>
-            <input
-              type="password"
-              value={googleKey}
-              onChange={e => setGoogleKey(e.target.value)}
-              className={inputClass}
-              placeholder="AIza..."
-            />
-            <p className="text-zinc-600 text-xs mt-1.5">
-              Para búsqueda de videos de YouTube. Necesita tener habilitada:
-              <br />
-              <span className="text-zinc-500">YouTube Data API v3</span>
-            </p>
-          </div>
 
           {/* Google OAuth Client ID */}
           <div>
@@ -137,10 +115,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               placeholder="123456789-abc.apps.googleusercontent.com"
             />
             <p className="text-zinc-600 text-xs mt-1.5">
-              Para guardar playlists en tu cuenta de YouTube.
+              Para buscar videos (reproducir) y guardar playlists en tu cuenta de YouTube.
               <br />
-              <span className="text-zinc-500">
-                Tipo: Aplicación web · Origen: <span className="text-indigo-400">http://localhost:3000</span>
+              <span className="text-zinc-500 text-[10px] leading-relaxed block mt-1">
+                Configura en Google Cloud Console:<br />
+                • Orígenes de JavaScript: <span className="text-indigo-400 font-mono">http://localhost:5173</span><br />
+                • URIs de redireccionamiento: <span className="text-indigo-400 font-mono">http://localhost:5173</span>
               </span>
             </p>
           </div>
@@ -152,7 +132,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <code className="bg-zinc-800 px-1.5 py-0.5 rounded text-indigo-200">.env</code> en la raíz del proyecto:
             </p>
             <pre className="text-indigo-200/70 text-[11px] mt-2 font-mono leading-relaxed">
-              {`VITE_GEMINI_API_KEY=tu_clave\nVITE_GOOGLE_API_KEY=tu_clave\nVITE_GOOGLE_CLIENT_ID=tu_client_id`}
+              {`VITE_GEMINI_API_KEY=tu_clave\nVITE_GOOGLE_CLIENT_ID=tu_client_id`}
             </pre>
           </div>
 
@@ -178,9 +158,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <br />
               2. Crea un proyecto y habilita "YouTube Data API v3"
               <br />
-              3. Ve a Credenciales → Crear clave API
-              <br />
-              4. Para playlists: Credenciales → ID de cliente OAuth 2.0
+              3. Ve a Credenciales → Crear ID de cliente OAuth 2.0
             </p>
           </div>
         </div>

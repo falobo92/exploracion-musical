@@ -52,11 +52,14 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
   throw lastError;
 }
 
+let cachedAccessToken: string | null = null;
+let tokenExpiryTime: number = 0;
+
 /**
- * Busca un video en YouTube usando una API Key.
+ * Busca un video en YouTube usando un token de OAuth.
  * Incluye caché en memoria para evitar búsquedas duplicadas.
  */
-export async function searchVideoWithKey(query: string, apiKey: string): Promise<string | null> {
+export async function searchVideoWithToken(query: string, accessToken: string): Promise<string | null> {
   const cacheKey = query.toLowerCase().trim();
 
   if (searchCache.has(cacheKey)) {
@@ -75,8 +78,10 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
       // Sin videoCategoryId para no filtrar videos musicales válidos; maxResults=3 para mejor selección
       // Se optimiza el query para encontrar el audio oficial
       const finalQuery = `${query}`; // El query ya viene formateado desde Gemini como "Artist - Title (Official Audio)"
-      const url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(finalQuery)}&maxResults=5&type=video&videoEmbeddable=true&key=${apiKey}`;
-      const response = await fetchWithTimeout(url);
+      const url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(finalQuery)}&maxResults=5&type=video&videoEmbeddable=true`;
+      const response = await fetchWithTimeout(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
 
       if (!response.ok) {
         if (response.status === 403 || response.status === 401) {
@@ -170,7 +175,7 @@ export async function searchVideoWithKey(query: string, apiKey: string): Promise
  */
 export async function batchSearchVideos(
   queries: { index: number; query: string }[],
-  apiKey: string,
+  accessToken: string,
   concurrency = 3
 ): Promise<Map<number, string>> {
   const results = new Map<number, string>();
@@ -180,7 +185,7 @@ export async function batchSearchVideos(
     while (queue.length > 0) {
       const item = queue.shift()!;
       try {
-        const videoId = await searchVideoWithKey(item.query, apiKey);
+        const videoId = await searchVideoWithToken(item.query, accessToken);
         if (videoId) results.set(item.index, videoId);
       } catch {
         // Continuar con el siguiente
@@ -197,8 +202,13 @@ export async function batchSearchVideos(
 
 /**
  * Obtiene un access token de Google usando OAuth 2.0.
+ * Utiliza un caché en memoria validando la expiración.
  */
-export function getGoogleAccessToken(clientId: string): Promise<string> {
+export async function getGoogleAccessToken(clientId: string, forceRefresh = false): Promise<string> {
+  if (!forceRefresh && cachedAccessToken && Date.now() < tokenExpiryTime) {
+    return cachedAccessToken;
+  }
+
   return new Promise((resolve, reject) => {
     if (!window.google?.accounts?.oauth2) {
       reject(new Error('Google Identity Services no está cargado. Recarga la página.'));
@@ -212,6 +222,9 @@ export function getGoogleAccessToken(clientId: string): Promise<string> {
         if (response.error) {
           reject(new Error(response.error_description || response.error));
         } else if (response.access_token) {
+          cachedAccessToken = response.access_token;
+          const expiresIn = response.expires_in ? Number(response.expires_in) : 3599;
+          tokenExpiryTime = Date.now() + (expiresIn - 300) * 1000; // 5 minutos de margen
           resolve(response.access_token);
         } else {
           reject(new Error('No se obtuvo token de acceso.'));
@@ -296,4 +309,6 @@ export async function addVideoToPlaylist(
 export function clearSearchCache() {
   searchCache.clear();
   failTTL.clear();
+  cachedAccessToken = null;
+  tokenExpiryTime = 0;
 }

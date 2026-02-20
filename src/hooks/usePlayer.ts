@@ -1,17 +1,17 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { MusicMix } from '@/types';
-import { searchVideoWithKey } from '@/services/youtube';
+import { searchVideoWithToken, getGoogleAccessToken } from '@/services/youtube';
 
 interface UsePlayerOptions {
   mixes: MusicMix[];
-  googleKey: string;
+  googleClientId: string;
   onMixesUpdate: (updater: (prev: MusicMix[]) => MusicMix[]) => void;
   notify: (msg: string, type?: 'info' | 'success' | 'error' | 'loading', duration?: number) => string;
   update: (id: string, msg: string, type?: 'info' | 'success' | 'error' | 'loading', duration?: number) => void;
   openSettings: () => void;
 }
 
-export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, openSettings }: UsePlayerOptions) {
+export function usePlayer({ mixes, googleClientId, onMixesUpdate, notify, update, openSettings }: UsePlayerOptions) {
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [shuffle, setShuffle] = useState(false);
@@ -30,8 +30,8 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
       return;
     }
 
-    if (!googleKey) {
-      notify('Falta API Key de Google.', 'error');
+    if (!googleClientId) {
+      notify('Falta configurar Google Client ID.', 'error');
       openSettings();
       setIsPlaying(false);
       return;
@@ -39,7 +39,8 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
 
     const toastId = notify(`Buscando: ${mix.artist}...`, 'loading');
 
-    searchVideoWithKey(mix.searchQuery, googleKey)
+    getGoogleAccessToken(googleClientId)
+      .then(accessToken => searchVideoWithToken(mix.searchQuery, accessToken))
       .then(foundId => {
         if (foundId) {
           onMixesUpdate(prev =>
@@ -57,11 +58,11 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
         update(toastId, 'Error en búsqueda.', 'error');
         setIsPlaying(false);
       });
-  }, [currentIndex, googleKey]);
+  }, [currentIndex, googleClientId]);
 
   // Pre-carga (Prefetch) de la siguiente canción
   useEffect(() => {
-    if (currentIndex === -1 || !googleKey) return;
+    if (currentIndex === -1 || !googleClientId) return;
 
     let nextIndex = -1;
     if (shuffle) {
@@ -75,7 +76,8 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
       const nextMix = mixes[nextIndex];
       if (nextMix && !nextMix.videoId) {
         console.log(`[Prefetch] Buscando en segundo plano: ${nextMix.artist}`);
-        searchVideoWithKey(nextMix.searchQuery, googleKey)
+        getGoogleAccessToken(googleClientId)
+          .then(accessToken => searchVideoWithToken(nextMix.searchQuery, accessToken))
           .then(foundId => {
             if (foundId) {
               onMixesUpdate(prev =>
@@ -86,7 +88,7 @@ export function usePlayer({ mixes, googleKey, onMixesUpdate, notify, update, ope
           .catch(() => console.warn('[Prefetch] Falló búsqueda silenciosa'));
       }
     }
-  }, [currentIndex, googleKey, mixes, shuffle]);
+  }, [currentIndex, googleClientId, mixes, shuffle]);
 
   const handleNext = useCallback(() => {
     setCurrentIndex(prev => {

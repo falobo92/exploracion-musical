@@ -40,7 +40,7 @@ export default function App() {
   // Player
   const player = usePlayer({
     mixes: filteredMixes,
-    googleKey: apiKeys.googleKey,
+    googleClientId: apiKeys.googleClientId,
     onMixesUpdate: setMixes,
     notify,
     update,
@@ -50,7 +50,6 @@ export default function App() {
   // Playlist
   const playlist = usePlaylist({
     mixes: filteredMixes,
-    googleKey: apiKeys.googleKey,
     googleClientId: apiKeys.googleClientId,
     setMixes,
     notify,
@@ -200,8 +199,6 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         geminiKey={apiKeys.geminiKey}
         setGeminiKey={apiKeys.setGeminiKey}
-        googleKey={apiKeys.googleKey}
-        setGoogleKey={apiKeys.setGoogleKey}
         googleClientId={apiKeys.googleClientId}
         setGoogleClientId={apiKeys.setGoogleClientId}
         onClearAll={apiKeys.clearAll}

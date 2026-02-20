@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { MusicMix } from '@/types';
 import {
-  searchVideoWithKey,
+  searchVideoWithToken,
   getGoogleAccessToken,
   createYouTubePlaylist,
   addVideoToPlaylist,
@@ -9,7 +9,7 @@ import {
 
 interface UsePlaylistOptions {
   mixes: MusicMix[];
-  googleKey: string;
+
   googleClientId: string;
   setMixes: (updater: (prev: MusicMix[]) => MusicMix[]) => void;
   notify: (msg: string, type?: 'info' | 'success' | 'error' | 'loading', duration?: number) => string;
@@ -19,7 +19,7 @@ interface UsePlaylistOptions {
 
 export function usePlaylist({
   mixes,
-  googleKey,
+
   googleClientId,
   setMixes,
   notify,
@@ -48,19 +48,17 @@ export function usePlaylist({
 
       // Buscar videos que faltan
       const updatedMixes = [...mixes];
-      if (googleKey) {
-        for (let i = 0; i < updatedMixes.length; i++) {
-          if (!updatedMixes[i].videoId) {
-            update(toastId, `Buscando videos... (${i + 1}/${updatedMixes.length})`, 'loading');
-            const foundId = await searchVideoWithKey(updatedMixes[i].searchQuery, googleKey);
-            if (foundId) {
-              updatedMixes[i] = { ...updatedMixes[i], videoId: foundId };
-            }
-            await new Promise(r => setTimeout(r, 150));
+      for (let i = 0; i < updatedMixes.length; i++) {
+        if (!updatedMixes[i].videoId) {
+          update(toastId, `Buscando videos... (${i + 1}/${updatedMixes.length})`, 'loading');
+          const foundId = await searchVideoWithToken(updatedMixes[i].searchQuery, accessToken);
+          if (foundId) {
+            updatedMixes[i] = { ...updatedMixes[i], videoId: foundId };
           }
+          await new Promise(r => setTimeout(r, 150));
         }
-        setMixes(() => updatedMixes);
       }
+      setMixes(() => updatedMixes);
 
       const mixesWithVideo = updatedMixes.filter(m => m.videoId);
       if (mixesWithVideo.length === 0) {
@@ -89,7 +87,7 @@ export function usePlaylist({
     } finally {
       setIsSaving(false);
     }
-  }, [mixes, googleKey, googleClientId, setMixes, notify, update, openSettings]);
+  }, [mixes, googleClientId, setMixes, notify, update, openSettings]);
 
   return { isSaving, save };
 }
