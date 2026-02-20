@@ -4,9 +4,58 @@ const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 const SEARCH_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 2;
 
-// Cache de búsquedas para evitar llamadas repetidas.
-// Los fallos (null) se guardan con TTL para reintentar tras 5 min.
-const searchCache = new Map<string, string | null>();
+// --------------- Circuit breaker ---------------
+let quotaExhausted = false;
+export function isQuotaExhausted(): boolean {
+  return quotaExhausted;
+}
+
+// --------------- Persistent cache (localStorage + memory) ---------------
+const CACHE_STORAGE_KEY = "yt_search_cache";
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 500;
+
+interface CacheEntry {
+  videoId: string;
+  ts: number;
+}
+
+function loadPersistentCache(): Map<string, string> {
+  const map = new Map<string, string>();
+  try {
+    const raw = localStorage.getItem(CACHE_STORAGE_KEY);
+    if (!raw) return map;
+    const entries: Record<string, CacheEntry> = JSON.parse(raw);
+    const now = Date.now();
+    for (const [key, entry] of Object.entries(entries)) {
+      if (now - entry.ts < CACHE_TTL_MS) {
+        map.set(key, entry.videoId);
+      }
+    }
+  } catch {
+    // corrupted — start fresh
+  }
+  return map;
+}
+
+function persistCache(cache: Map<string, string | null>) {
+  try {
+    const entries: Record<string, CacheEntry> = {};
+    const now = Date.now();
+    let count = 0;
+    for (const [key, value] of cache) {
+      if (value === null) continue;
+      if (count >= CACHE_MAX_ENTRIES) break;
+      entries[key] = { videoId: value, ts: now };
+      count++;
+    }
+    localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // quota exceeded on localStorage — ignore
+  }
+}
+
+const searchCache = new Map<string, string | null>(loadPersistentCache());
 const failTTL = new Map<string, number>();
 const FAIL_TTL_MS = 5 * 60 * 1000;
 
@@ -46,7 +95,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
       return await fn();
     } catch (error: any) {
       lastError = error;
-      if (error instanceof YouTubeError && error.code === "AUTH") throw error;
+      if (error instanceof YouTubeError && (error.code === "AUTH" || error.code === "QUOTA")) throw error;
       if (attempt < retries) {
         const delay = Math.min(1000 * 2 ** attempt, 4000);
         await new Promise((r) => setTimeout(r, delay));
@@ -67,6 +116,11 @@ export async function searchVideo(
   query: string,
   auth: { apiKey?: string; token?: string },
 ): Promise<string | null> {
+  if (quotaExhausted) {
+    console.warn("[YouTube] Cuota agotada, saltando búsqueda.");
+    return null;
+  }
+
   const cacheKey = query.toLowerCase().trim();
 
   if (searchCache.has(cacheKey)) {
@@ -82,34 +136,47 @@ export async function searchVideo(
 
   return withRetry(async () => {
     try {
-      // Sin videoCategoryId para no filtrar videos musicales válidos; maxResults=3 para mejor selección
-      // Se optimiza el query para encontrar el audio oficial
-      const finalQuery = `${query}`;
-      // NUNCA enviar ambos. Si hay token, se prefiere el token en el header y NO se envía la key en la URL.
-      const useApiKey = auth.apiKey && !auth.token;
-      const url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(finalQuery)}&maxResults=5&type=video&videoEmbeddable=true${useApiKey ? `&key=${auth.apiKey}` : ""}`;
-      const headers = auth.token
-        ? { Authorization: `Bearer ${auth.token}` }
-        : undefined;
+      const finalQuery = query;
+      const useToken = !!auth.token;
+      const useApiKey = !!auth.apiKey && !useToken;
+      const useProxy = !useToken && !useApiKey;
+
+      let url: string;
+      let headers: Record<string, string> | undefined;
+
+      if (useProxy) {
+        url = `/api/youtube-search?q=${encodeURIComponent(finalQuery)}`;
+        headers = undefined;
+      } else {
+        url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(finalQuery)}&maxResults=5&type=video&videoEmbeddable=true${useApiKey ? `&key=${auth.apiKey}` : ""}`;
+        headers = useToken ? { Authorization: `Bearer ${auth.token}` } : undefined;
+      }
+
       const response = await fetchWithTimeout(url, { headers });
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error(
+          "[YouTube] status:", response.status,
+          "data:", JSON.stringify(errorData, null, 2),
+        );
+        const reason = errorData?.error?.errors?.[0]?.reason;
+
         if (response.status === 403) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error("[YouTube] Error 403:", errorData);
-          const reason = errorData.error?.errors?.[0]?.reason;
           if (
-            reason === "accessNotConfigured" ||
-            reason === "dailyLimitExceeded"
+            reason === "quotaExceeded" ||
+            reason === "dailyLimitExceeded" ||
+            reason === "accessNotConfigured"
           ) {
+            quotaExhausted = true;
             throw new YouTubeError(
-              `YouTube API no habilitada o cuota agotada (${reason}).`,
+              `YouTube API: ${reason} — ${errorData?.error?.message ?? "cuota agotada o API no habilitada"}.`,
               "QUOTA",
               403,
             );
           }
           throw new YouTubeError(
-            "Sin permisos de YouTube o Clave API inválida.",
+            `Sin permisos de YouTube (${reason ?? "forbidden"}): ${errorData?.error?.message ?? "Clave API inválida o restricción activa"}.`,
             "AUTH",
             403,
           );
@@ -123,7 +190,7 @@ export async function searchVideo(
         }
         if (isRetryable(response.status)) {
           throw new YouTubeError(
-            `Error ${response.status}`,
+            `Error ${response.status}: ${errorData?.error?.message ?? "error del servidor"}`,
             "QUOTA",
             response.status,
           );
@@ -225,6 +292,7 @@ export async function searchVideo(
 
       if (bestId) {
         searchCache.set(cacheKey, bestId);
+        persistCache(searchCache);
       } else {
         searchCache.set(cacheKey, null);
         failTTL.set(cacheKey, Date.now() + FAIL_TTL_MS);
@@ -266,15 +334,14 @@ export async function batchSearchVideos(
   const queue = [...queries];
 
   async function worker() {
-    while (queue.length > 0) {
+    while (queue.length > 0 && !quotaExhausted) {
       const item = queue.shift()!;
       try {
         const videoId = await searchVideoWithApiKey(item.query, apiKey);
         if (videoId) results.set(item.index, videoId);
       } catch {
-        // Continuar con el siguiente
+        if (quotaExhausted) break;
       }
-      // Rate limiting entre búsquedas
       await new Promise((r) => setTimeout(r, 100));
     }
   }
@@ -410,4 +477,8 @@ export function clearSearchCache() {
   failTTL.clear();
   cachedAccessToken = null;
   tokenExpiryTime = 0;
+  quotaExhausted = false;
+  try { localStorage.removeItem(CACHE_STORAGE_KEY); } catch {}
 }
+
+export { YouTubeError };

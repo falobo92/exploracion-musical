@@ -56,7 +56,6 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(80);
-  const [showVolume, setShowVolume] = useState(false);
   const [showVideo, setShowVideo] = useState(false); // Nuevo estado para controlar visibilidad del video
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [audioFailed, setAudioFailed] = useState(false);
@@ -698,10 +697,15 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                 </button>
 
                 {/* Volume — solo desktop */}
-                <div className="relative hidden sm:block">
+                <div className="hidden sm:flex items-center gap-1.5">
                   <button
-                    onClick={() => setShowVolume(!showVolume)}
-                    className="w-9 h-9 rounded-full text-zinc-500 hover:text-zinc-300 inline-flex items-center justify-center transition-colors"
+                    onClick={() => {
+                      const newVol = volume === 0 ? 80 : 0;
+                      setVolume(newVol);
+                      if (audioRef.current) audioRef.current.volume = newVol / 100;
+                      playerRef.current?.setVolume?.(newVol);
+                    }}
+                    className="w-9 h-9 rounded-full text-zinc-500 hover:text-zinc-300 inline-flex items-center justify-center transition-colors shrink-0"
                     aria-label="Volumen"
                   >
                     {volume === 0 ? (
@@ -717,13 +721,8 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                       </svg>
                     )}
                   </button>
-                  {showVolume && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 bg-zinc-800/95 backdrop-blur-xl border border-zinc-700/40 rounded-xl p-3 shadow-2xl min-w-[140px]">
-                      <input type="range" min="0" max="100" value={volume} onChange={handleVolumeChange}
-                        aria-label="Volumen" className="w-full h-1.5 rounded-full appearance-none bg-zinc-700 cursor-pointer" />
-                      <div className="text-[10px] text-zinc-500 text-center mt-1.5 font-mono">{volume}%</div>
-                    </div>
-                  )}
+                  <input type="range" min="0" max="100" value={volume} onChange={handleVolumeChange}
+                    aria-label="Volumen" className="w-20 h-1.5 rounded-full appearance-none bg-zinc-700 cursor-pointer accent-indigo-500" />
                 </div>
               </div>
             </div>

@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { MusicMix } from "@/types";
-import { searchVideoWithToken, getGoogleAccessToken } from "@/services/youtube";
+import { searchVideoWithToken, getGoogleAccessToken, isQuotaExhausted, YouTubeError } from "@/services/youtube";
 
 interface UsePlayerOptions {
   mixes: MusicMix[];
@@ -88,45 +88,55 @@ export function usePlayer({
           handleNext();
         }
       })
-      .catch(() => {
-        update(toastId, "Error en búsqueda.", "error");
+      .catch((err) => {
+        if (err instanceof YouTubeError && err.code === "QUOTA") {
+          update(toastId, "Cuota de YouTube agotada por hoy. Las búsquedas se reanudan mañana.", "error", 0);
+        } else {
+          update(toastId, "Error en búsqueda.", "error");
+        }
         setIsPlaying(false);
       });
   }, [currentIndex, googleClientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Pre-carga (Prefetch) de la siguiente canción
+  const prefetchCount = useRef(0);
+  const mixesRef = useRef(mixes);
+  useEffect(() => { mixesRef.current = mixes; }, [mixes]);
+
+  const MAX_PREFETCH_PER_SESSION = 5;
+  const PREFETCH_DELAY_MS = 3_000;
+
   useEffect(() => {
     if (currentIndex === -1 || !googleClientId) return;
+    if (prefetchCount.current >= MAX_PREFETCH_PER_SESSION || isQuotaExhausted()) return;
 
-    let nextIndex = -1;
-    if (shuffle) {
-      const unbuffered = mixes.findIndex(
-        (m, i) => !m.videoId && i !== currentIndex,
-      );
-      if (unbuffered !== -1) nextIndex = unbuffered;
-    } else if (currentIndex < mixes.length - 1) {
-      nextIndex = currentIndex + 1;
-    }
+    const nextIndex = currentIndex + 1;
+    if (nextIndex >= mixesRef.current.length) return;
+    const nextMix = mixesRef.current[nextIndex];
+    if (!nextMix || nextMix.videoId) return;
 
-    if (nextIndex !== -1) {
-      const nextMix = mixes[nextIndex];
-      if (nextMix && !nextMix.videoId) {
-        console.log(`[Prefetch] Buscando en segundo plano: ${nextMix.artist}`);
-        getGoogleAccessToken(googleClientId)
-          .then((token) => searchVideoWithToken(nextMix.searchQuery, token))
-          .then((foundId) => {
-            if (foundId) {
-              onMixesUpdate((prev) =>
-                prev.map((m, i) =>
-                  i === nextIndex ? { ...m, videoId: foundId } : m,
-                ),
-              );
-            }
-          })
-          .catch(() => console.warn("[Prefetch] Falló búsqueda silenciosa"));
-      }
-    }
-  }, [currentIndex, googleClientId, mixes, shuffle, onMixesUpdate]);
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      if (prefetchCount.current >= MAX_PREFETCH_PER_SESSION || isQuotaExhausted()) return;
+
+      prefetchCount.current++;
+      console.log(`[Prefetch ${prefetchCount.current}/${MAX_PREFETCH_PER_SESSION}] ${nextMix.artist}`);
+
+      getGoogleAccessToken(googleClientId)
+        .then((token) => searchVideoWithToken(nextMix.searchQuery, token))
+        .then((foundId) => {
+          if (cancelled || !foundId) return;
+          onMixesUpdate((prev) =>
+            prev.map((m, i) =>
+              i === nextIndex ? { ...m, videoId: foundId } : m,
+            ),
+          );
+        })
+        .catch(() => console.warn("[Prefetch] Falló búsqueda silenciosa"));
+    }, PREFETCH_DELAY_MS);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [currentIndex, googleClientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrev = useCallback(() => {
     setCurrentIndex((prev) => (prev > 0 ? prev - 1 : prev));

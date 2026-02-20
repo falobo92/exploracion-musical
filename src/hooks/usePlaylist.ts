@@ -5,6 +5,8 @@ import {
   getGoogleAccessToken,
   createYouTubePlaylist,
   addVideoToPlaylist,
+  isQuotaExhausted,
+  YouTubeError,
 } from '@/services/youtube';
 
 interface UsePlaylistOptions {
@@ -46,10 +48,10 @@ export function usePlaylist({
     try {
       const accessToken = await getGoogleAccessToken(googleClientId);
 
-      // Buscar videos que faltan
       const updatedMixes = [...mixes];
       for (let i = 0; i < updatedMixes.length; i++) {
         if (!updatedMixes[i].videoId) {
+          if (isQuotaExhausted()) break;
           update(toastId, `Buscando videos... (${i + 1}/${updatedMixes.length})`, 'loading');
           const foundId = await searchVideoWithToken(updatedMixes[i].searchQuery, accessToken);
           if (foundId) {
@@ -83,7 +85,11 @@ export function usePlaylist({
       window.open(`https://www.youtube.com/playlist?list=${playlistId}`, '_blank');
     } catch (error: any) {
       console.error('Error creating playlist:', error);
-      update(toastId, error.message || 'No se pudo crear la playlist.', 'error');
+      if (error instanceof YouTubeError && error.code === "QUOTA") {
+        update(toastId, 'Cuota de YouTube agotada por hoy. Las búsquedas se reanudan mañana.', 'error', 0);
+      } else {
+        update(toastId, error.message || 'No se pudo crear la playlist.', 'error');
+      }
     } finally {
       setIsSaving(false);
     }
