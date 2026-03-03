@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Header } from './components/Header';
 import { FilterBar } from './components/FilterBar';
 import { WorldMap } from './components/WorldMap';
@@ -23,6 +24,7 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isSavedSearchesOpen, setIsSavedSearchesOpen] = useState(false);
   const [selectedMapMixId, setSelectedMapMixId] = useState<string | undefined>();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
 
   // API Keys
@@ -95,112 +97,157 @@ export default function App() {
   }, [savedSearches.save, notify]);
 
   return (
-    <div className="fixed inset-0 bg-zinc-950 text-zinc-100 font-sans overflow-hidden">
-      {/* Background Map Layer */}
-      <WorldMap
-        mixes={filteredMixes}
-        onSelect={handleMapSelect}
-        onPlay={player.handlePlayCard}
-        selectedId={selectedMapMixId}
-        playingId={player.currentMix?.id}
-        className="map-container-wrapper"
-      />
+    <div className="fixed inset-0 bg-zinc-950 text-zinc-100 font-sans overflow-hidden flex flex-col lg:flex-row">
+      
+      {/* 
+        ========================================================================
+        MAIN MAP AREA
+        ========================================================================
+      */}
+      <main className="flex-1 relative min-h-0 min-w-0 h-full z-10 order-first lg:order-last flex flex-col">
+        {/* Toggle Panel Button */}
+        <button
+          onClick={() => setIsSidebarOpen(prev => !prev)}
+          className="absolute top-6 left-6 z-[9999] px-4 py-3 rounded-2xl bg-zinc-950/90 hover:bg-zinc-900 text-white border border-white/10 shadow-2xl backdrop-blur-md transition-all flex items-center gap-2.5 group hover:scale-105"
+          title={isSidebarOpen ? "Ocultar Listado" : "Ver Listado"}
+        >
+          <svg className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {isSidebarOpen ? (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" />
+            )}
+          </svg>
+          <span className="text-sm font-bold tracking-wide">
+            {isSidebarOpen ? "Ocultar Mixes" : "Ver Mixes"}
+          </span>
+        </button>
 
-      {/* Foreground UI Layer (pointer-events-none so map can be interacted with) */}
-      <div className="absolute inset-0 z-10 pointer-events-none flex flex-col">
-        {/* Top Area: Header + FilterBar */}
-        <div className="pointer-events-none pt-4 px-4 sm:px-6 max-w-[1920px] mx-auto w-full flex flex-col gap-4 z-20">
-          <div className="pointer-events-auto">
-            <Header onOpenSettings={openSettings} hasGemini={apiKeys.hasGemini} hasYoutubeKey={apiKeys.hasYoutubeKey} />
-          </div>
-          <div className="pointer-events-auto">
-            <FilterBar
-              criteria={criteria}
-              onChange={handleCriteriaChange}
-              onUpdateCriteria={updateCriteria}
-              onGenerate={handleGenerate}
-              onPlayAll={player.handlePlayAll}
-              onSavePlaylist={playlist.save}
-              onExport={() => setIsExportOpen(true)}
-              onOpenSavedSearches={() => setIsSavedSearchesOpen(true)}
-              savedSearchCount={savedSearches.savedSearches.length}
-              loading={loading}
-              isSavingPlaylist={playlist.isSaving}
-              resultCount={filteredMixes.length}
-              totalCount={mixes.length}
-              hasMixes={filteredMixes.length > 0}
-            />
-          </div>
+        <WorldMap
+          mixes={filteredMixes}
+          onSelect={handleMapSelect}
+          onPlay={player.handlePlayCard}
+          selectedId={selectedMapMixId}
+          playingId={player.currentMix?.id}
+          className="absolute inset-0 w-full h-full bg-[#0c0c10]"
+        />
+
+        {/* Floating Bottom Player over the map */}
+        <AnimatePresence>
+          {player.currentMix && (
+            <motion.div
+              initial={{ opacity: 0, y: 50, x: '-50%' }}
+              animate={{ opacity: 1, y: 0, x: '-50%' }}
+              exit={{ opacity: 0, y: 50, x: '-50%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="absolute bottom-4 sm:bottom-8 left-1/2 w-[calc(100%-2rem)] sm:w-auto z-[9999] pointer-events-auto"
+            >
+              <PlayerBar
+                currentMix={player.currentMix}
+                isPlaying={player.isPlaying}
+                onPlayPause={() => player.setIsPlaying(!player.isPlaying)}
+                onPlay={() => player.setIsPlaying(true)}
+                onPause={() => player.setIsPlaying(false)}
+                onNext={player.handleNext}
+                onPrev={player.handlePrev}
+                videoId={player.currentMix?.videoId}
+                onVideoEnd={player.handleNext}
+                currentIndex={player.currentIndex}
+                totalTracks={filteredMixes.length}
+                shuffle={player.shuffle}
+                onToggleShuffle={() => player.setShuffle(!player.shuffle)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* 
+        ========================================================================
+        SIDEBAR AREA (Left on Desktop, Bottom on Mobile)
+        ========================================================================
+      */}
+      <div 
+        className={`z-20 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] flex shrink-0 ${
+          isSidebarOpen 
+            ? 'w-full lg:w-[480px] xl:w-[520px] h-[55vh] lg:h-full opacity-100' 
+            : 'w-full lg:w-0 h-0 lg:h-full opacity-0 lg:opacity-100 overflow-hidden'
+        }`}
+      >
+        <aside className="w-full lg:w-[480px] xl:w-[520px] h-[55vh] lg:h-full flex flex-col bg-zinc-950/95 backdrop-blur-3xl border-t lg:border-t-0 lg:border-r border-white/10 shadow-2xl shadow-black/80">
+          
+          {/* Top Sticky Container */}
+        <div className="p-4 sm:p-5 flex flex-col gap-4 bg-zinc-950/80 border-b border-white/5 z-20 shrink-0">
+          <Header onOpenSettings={openSettings} hasGemini={apiKeys.hasGemini} hasYoutubeKey={apiKeys.hasYoutubeKey} />
+          <FilterBar
+            criteria={criteria}
+            onChange={handleCriteriaChange}
+            onUpdateCriteria={updateCriteria}
+            onGenerate={handleGenerate}
+            onPlayAll={player.handlePlayAll}
+            onSavePlaylist={playlist.save}
+            onExport={() => setIsExportOpen(true)}
+            onOpenSavedSearches={() => setIsSavedSearchesOpen(true)}
+            savedSearchCount={savedSearches.savedSearches.length}
+            loading={loading}
+            isSavingPlaylist={playlist.isSaving}
+            resultCount={filteredMixes.length}
+            totalCount={mixes.length}
+            hasMixes={filteredMixes.length > 0}
+          />
         </div>
 
-        {/* Main Area: Mix List floating on the right */}
-        <main className="flex-1 flex flex-col pointer-events-none p-4 sm:p-6 pb-32 max-w-[1920px] mx-auto w-full min-h-0 items-end justify-start">
-            <div className="pointer-events-auto w-full lg:w-[400px] xl:w-[440px] flex flex-col glass-panel rounded-[2rem] overflow-hidden max-h-full shadow-2xl relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 pointer-events-none" />
-              {/* Header del panel */}
-              <div className="relative flex items-center justify-between p-5 pb-4 border-b border-white/5 bg-zinc-950/30 backdrop-blur-xl z-10">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-4 rounded-full bg-gradient-to-b from-indigo-400 to-purple-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
-                  <h3 className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-zinc-100 to-zinc-400 uppercase tracking-widest">
-                    {filteredMixes.length} canciones
-                  </h3>
-                </div>
-                {player.currentMix && (
-                  <button
-                    onClick={scrollToCurrent}
-                    className="text-[10px] uppercase font-bold tracking-wider rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-indigo-300 hover:text-white hover:bg-indigo-500/20 transition-all shadow-[0_0_10px_rgba(99,102,241,0.2)] hover:shadow-[0_0_15px_rgba(99,102,241,0.4)]"
-                    title="Ir a la canción sonando"
+        {/* List Header */}
+        <div className="flex items-center justify-between px-5 py-3 bg-zinc-900/50 border-b border-white/5 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+            <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest">
+              {filteredMixes.length} pistas encontradas
+            </h3>
+          </div>
+          {player.currentMix && (
+            <button
+              onClick={scrollToCurrent}
+              className="text-[10px] uppercase font-bold tracking-wider rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/20 transition-colors shadow-sm"
+              title="Ir a la canción sonando"
+            >
+              Sonando ahora
+            </button>
+          )}
+        </div>
+
+        {/* Scrollable Mix List */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 scrollbar-thin relative bg-gradient-to-b from-zinc-950 to-zinc-900/50">
+          {loading ? (
+            <SkeletonGrid count={6} />
+          ) : filteredMixes.length > 0 ? (
+            <motion.div layout className="grid grid-cols-1 gap-4">
+              <AnimatePresence mode="popLayout">
+                {filteredMixes.map((mix, index) => (
+                  <motion.div 
+                    key={mix.id} 
+                    id={`mix-card-${mix.id}`}
+                    layout
                   >
-                    Sonando ahora
-                  </button>
-                )}
-              </div>
-
-              {/* Lista scrollable */}
-              <div className="relative flex-1 overflow-y-auto p-4 sm:p-5 scrollbar-thin z-10">
-                {loading ? (
-                  <SkeletonGrid count={6} />
-                ) : filteredMixes.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-3">
-                    {filteredMixes.map((mix, index) => (
-                      <div key={mix.id} id={`mix-card-${mix.id}`}>
-                        <MixCard
-                          mix={mix}
-                          onPlay={player.handlePlayCard}
-                          isPlaying={player.currentMix?.id === mix.id && player.isPlaying}
-                          isCurrent={player.currentMix?.id === mix.id}
-                          index={index}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState onGenerate={handleGenerate} onOpenSettings={openSettings} hasApiKey={apiKeys.hasGemini} />
-                )}
-              </div>
-            </div>
-        </main>
+                    <MixCard
+                      mix={mix}
+                      onPlay={player.handlePlayCard}
+                      isPlaying={player.currentMix?.id === mix.id && player.isPlaying}
+                      isCurrent={player.currentMix?.id === mix.id}
+                      index={index}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          ) : (
+            <EmptyState onGenerate={handleGenerate} onOpenSettings={openSettings} hasApiKey={apiKeys.hasGemini} />
+          )}
+        </div>
+      </aside>
       </div>
 
-      {/* Floating Bottom Player */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] sm:w-auto z-50">
-        <PlayerBar
-          currentMix={player.currentMix}
-          isPlaying={player.isPlaying}
-          onPlayPause={() => player.setIsPlaying(!player.isPlaying)}
-          onPlay={() => player.setIsPlaying(true)}
-          onPause={() => player.setIsPlaying(false)}
-          onNext={player.handleNext}
-          onPrev={player.handlePrev}
-          videoId={player.currentMix?.videoId}
-          onVideoEnd={player.handleNext}
-          currentIndex={player.currentIndex}
-          totalTracks={filteredMixes.length}
-          shuffle={player.shuffle}
-          onToggleShuffle={() => player.setShuffle(!player.shuffle)}
-        />
-      </div>
-
+      {/* Modals & Toasts */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}

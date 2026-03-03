@@ -221,7 +221,7 @@ export async function generateStrangeMixes(
     2. REGLAS DE IDIOMA:
        - 'description', 'style', 'country', 'continent' → DEBEN estar en ESPAÑOL.
        - 'songTitle' y 'artist' → Mantén los nombres originales.
-    3. 'searchQuery' → Formato exacto: "Artist Name - Song Title (Official Audio)".
+    3. 'searchQuery' → Formato exacto: "Artist Name - Song Title".
        - Asegúrate de que la combinación Artista + Canción sea única y correcta.
        - Evita "Live", "Cover", "Remix" a menos que sea esencial para el género.
     4. 'year' → Año de lanzamiento real (4 dígitos).
@@ -238,7 +238,7 @@ export async function generateStrangeMixes(
     - year: Año de lanzamiento (YYYY).
     - bpm: BPM aproximado (número).
     - description: Breve reseña experta en español (máx 12 palabras) explicando por qué encaja en el contexto.
-    - searchQuery: "Artista - Título (Official Audio)".
+    - searchQuery: "Artista - Título".
   `;
 
   const responseSchema = {

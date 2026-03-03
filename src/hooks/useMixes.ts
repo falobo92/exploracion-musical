@@ -21,9 +21,19 @@ function loadPersistedMixes(): MusicMix[] {
 
 function persistMixes(mixes: MusicMix[]) {
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(mixes));
-  } catch {
-    // ignore quota errors
+    // Limitar a los 100 mixes más recientes para evitar agotar la cuota de sessionStorage
+    const mixesToSave = mixes.slice(0, 100);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(mixesToSave));
+  } catch (e: any) {
+    if (e.name === 'QuotaExceededError' || e.message?.toLowerCase().includes('quota')) {
+      try {
+        // En caso de error de cuota, intentar guardar menos elementos
+        const reduced = mixes.slice(0, 30);
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(reduced));
+      } catch {
+        // Ignorar si sigue fallando
+      }
+    }
   }
 }
 

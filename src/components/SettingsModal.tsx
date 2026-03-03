@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -47,8 +48,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [showConfirmClear, setShowConfirmClear] = useState(false);
 
-  if (!isOpen) return null;
-
   const geminiStatus = validateKeyFormat(geminiKey, 'api');
   const youtubeStatus = validateKeyFormat(youtubeApiKey, 'youtube');
   const clientIdStatus = validateKeyFormat(googleClientId, 'client');
@@ -57,14 +56,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     'w-full bg-zinc-950 border border-zinc-700/50 text-white px-3 py-2.5 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all text-sm';
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md"
-      onClick={e => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="bg-zinc-900 border border-zinc-700/50 rounded-2xl w-full max-w-md p-6 shadow-2xl mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md"
+          onClick={e => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 20, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.9, y: 20, opacity: 0 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="bg-zinc-900 border border-zinc-700/50 rounded-2xl w-full max-w-md p-6 shadow-2xl mx-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-white">Configuración</h2>
           <button
             onClick={onClose}
@@ -223,7 +233,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             Cerrar
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

@@ -20,8 +20,8 @@ interface CacheEntry {
   ts: number;
 }
 
-function loadPersistentCache(): Map<string, string> {
-  const map = new Map<string, string>();
+function loadPersistentCache(): Map<string, CacheEntry> {
+  const map = new Map<string, CacheEntry>();
   try {
     const raw = localStorage.getItem(CACHE_STORAGE_KEY);
     if (!raw) return map;
@@ -29,7 +29,7 @@ function loadPersistentCache(): Map<string, string> {
     const now = Date.now();
     for (const [key, entry] of Object.entries(entries)) {
       if (now - entry.ts < CACHE_TTL_MS) {
-        map.set(key, entry.videoId);
+        map.set(key, entry);
       }
     }
   } catch {
@@ -38,24 +38,62 @@ function loadPersistentCache(): Map<string, string> {
   return map;
 }
 
-function persistCache(cache: Map<string, string | null>) {
+let persistTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function persistCacheDebounced(cache: Map<string, CacheEntry | null>) {
+  if (persistTimeout) clearTimeout(persistTimeout);
+  persistTimeout = setTimeout(() => {
+    tryPersistCache(cache);
+  }, 1000);
+}
+
+function tryPersistCache(cache: Map<string, CacheEntry | null>) {
   try {
-    const entries: Record<string, CacheEntry> = {};
-    const now = Date.now();
-    let count = 0;
-    for (const [key, value] of cache) {
-      if (value === null) continue;
-      if (count >= CACHE_MAX_ENTRIES) break;
-      entries[key] = { videoId: value, ts: now };
-      count++;
-    }
-    localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(entries));
+    const validEntries = Array.from(cache.entries())
+      .filter((entry): entry is [string, CacheEntry] => entry[1] !== null)
+      .sort((a, b) => b[1].ts - a[1].ts);
+    
+    const toSave = validEntries.slice(0, CACHE_MAX_ENTRIES);
+    saveWithQuotaRetry(CACHE_STORAGE_KEY, toSave);
   } catch {
-    // quota exceeded on localStorage — ignore
+    // ignore
   }
 }
 
-const searchCache = new Map<string, string | null>(loadPersistentCache());
+function saveWithQuotaRetry(key: string, validEntries: [string, CacheEntry][]) {
+  const entries: Record<string, CacheEntry> = {};
+  for (const [k, val] of validEntries) {
+    entries[k] = val;
+  }
+
+  try {
+    localStorage.setItem(key, JSON.stringify(entries));
+  } catch (e: any) {
+    if (e.name === 'QuotaExceededError' || e.message?.toLowerCase().includes('quota')) {
+      if (validEntries.length > 10) {
+        const reducedEntries = validEntries.slice(0, Math.floor(validEntries.length / 2));
+        const reducedObj: Record<string, CacheEntry> = {};
+        for (const [k, val] of reducedEntries) {
+          reducedObj[k] = val;
+        }
+        try {
+          localStorage.setItem(key, JSON.stringify(reducedObj));
+          
+          const keysToKeep = new Set(reducedEntries.map(e => e[0]));
+          for (const k of searchCache.keys()) {
+            if (searchCache.get(k) !== null && !keysToKeep.has(k)) {
+              searchCache.delete(k);
+            }
+          }
+        } catch {
+          // give up
+        }
+      }
+    }
+  }
+}
+
+const searchCache = new Map<string, CacheEntry | null>(Array.from(loadPersistentCache().entries()));
 const failTTL = new Map<string, number>();
 const FAIL_TTL_MS = 5 * 60 * 1000;
 
@@ -125,7 +163,7 @@ export async function searchVideo(
 
   if (searchCache.has(cacheKey)) {
     const cached = searchCache.get(cacheKey);
-    if (cached !== null && cached !== undefined) return cached;
+    if (cached !== null && cached !== undefined) return cached.videoId;
     // Si es un fallo cacheado, comprobar TTL
     const expiry = failTTL.get(cacheKey) ?? 0;
     if (Date.now() < expiry) return null;
@@ -203,81 +241,65 @@ export async function searchVideo(
       const data = await response.json();
       const items = data.items ?? [];
 
-      // Seleccionar el mejor resultado: priorizar los que contengan palabras del query en el título
-      // y términos de calidad (official, audio, high quality)
-      const queryWords = query
-        .toLowerCase()
-        .replace(/\(official audio\)/g, "")
-        .split(/[\s\-–]+/)
-        .filter((w) => w.length > 2);
-      const qualityTerms = [
-        "official",
-        "audio",
-        "video oficial",
-        "lyric",
-        "topic",
-      ];
-      const negativeTerms = [
-        "reaction",
-        "review",
-        "cover",
-        "tutorial",
-        "karaoke",
-        "instrumental",
-        "remix",
-      ];
-
+      // Confiar principalmente en el algoritmo de YouTube, que es muy preciso
+      // Pero aplicamos filtros para evitar covers, directos o karaokes si no se piden
       let bestId: string | null = null;
       let bestScore = -100;
 
-      for (const item of items) {
+      const firstResultId = items[0]?.id?.videoId ?? null;
+      const lowerQuery = query.toLowerCase();
+      const isCoverRequested = lowerQuery.includes("cover");
+      const isRemixRequested = lowerQuery.includes("remix");
+      const isLiveRequested = lowerQuery.includes("live") || lowerQuery.includes("vivo");
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
         const videoId = item.id?.videoId;
         if (!videoId) continue;
 
         const title = (item.snippet?.title ?? "").toLowerCase();
         const channelTitle = (item.snippet?.channelTitle ?? "").toLowerCase();
-        const description = (item.snippet?.description ?? "").toLowerCase();
 
-        // Puntuación base por coincidencia de palabras del query
-        let score = queryWords.reduce(
-          (s: number, w: string) => s + (title.includes(w) ? 3 : 0),
-          0,
-        );
+        // Base score: damos mucho peso a la posición en la que YouTube devuelve el video
+        // El #1 recibe +10, el #2 +8, etc.
+        let score = (5 - i) * 2;
 
-        // Bonus por términos de calidad
-        score += qualityTerms.reduce(
-          (s: number, w: string) => s + (title.includes(w) ? 2 : 0),
-          0,
-        );
-
-        // Penalización fuerte por términos negativos (a menos que estén en el query original)
-        const isCoverRequested = query.toLowerCase().includes("cover");
-        const isRemixRequested = query.toLowerCase().includes("remix");
-
-        if (!isCoverRequested) {
-          score -= negativeTerms.reduce(
-            (s: number, w: string) => s + (title.includes(w) ? 5 : 0),
-            0,
-          );
-        }
-        if (!isRemixRequested && title.includes("remix")) {
-          score -= 3;
-        }
-
-        // Bonus por canales que suelen ser oficiales o de alta calidad
+        // Bonus si el canal es oficial o "Topic" (canales generados por YT Music)
         if (
           channelTitle.includes("topic") ||
           channelTitle.includes("official") ||
           channelTitle.includes("vevo")
         ) {
-          score += 4;
+          score += 5;
         }
 
-        // Preferir videos que NO sean muy cortos (shorts/previews) ni muy largos (full albums)
-        // Nota: La API de search no devuelve duración, así que confiamos en título/descripción
-        if (title.includes("full album") || title.includes("completo"))
-          score -= 2;
-        if (title.includes("preview") || title.includes("teaser")) score -= 5;
+        // Penalizaciones drásticas por contenido no deseado
+        const penalties = [
+          { term: "karaoke", weight: 15 },
+          { term: "instrumental", weight: 10 },
+          { term: "reaction", weight: 15 },
+          { term: "review", weight: 15 },
+          { term: "tutorial", weight: 15 },
+          { term: "8d audio", weight: 10 },
+          { term: "bass boosted", weight: 8 },
+          { term: "slowed", weight: 8 },
+          { term: "reverb", weight: 8 },
+          { term: "teaser", weight: 10 },
+          { term: "preview", weight: 10 },
+        ];
+
+        for (const { term, weight } of penalties) {
+          if (title.includes(term)) score -= weight;
+        }
+
+        if (!isCoverRequested && title.includes("cover")) score -= 15;
+        if (!isRemixRequested && title.includes("remix")) score -= 5;
+        if (!isLiveRequested && (title.includes("live") || title.includes("en vivo"))) score -= 5;
+
+        // Penalizar álbumes completos (las búsquedas de música suelen ser de 1 canción)
+        if (title.includes("full album") || title.includes("álbum completo")) {
+          score -= 10;
+        }
 
         if (score > bestScore) {
           bestScore = score;
@@ -285,14 +307,14 @@ export async function searchVideo(
         }
       }
 
-      // Si ninguno coincide, tomar el primero disponible
-      if (!bestId && items.length > 0) {
-        bestId = items[0].id?.videoId ?? null;
+      // Fallback seguro: si todos tienen puntaje bajísimo, confiamos en el primero
+      if (!bestId) {
+        bestId = firstResultId;
       }
 
       if (bestId) {
-        searchCache.set(cacheKey, bestId);
-        persistCache(searchCache);
+        searchCache.set(cacheKey, { videoId: bestId, ts: Date.now() });
+        persistCacheDebounced(searchCache);
       } else {
         searchCache.set(cacheKey, null);
         failTTL.set(cacheKey, Date.now() + FAIL_TTL_MS);

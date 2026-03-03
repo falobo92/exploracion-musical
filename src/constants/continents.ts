@@ -28,11 +28,11 @@ const BASE_CONTINENTS: Record<string, ContinentStyle> = {
   },
   Europa: {
     label: 'Europa',
-    bg: '#6366f1',
-    border: '#4f46e5',
+    bg: '#3b82f6',
+    border: '#2563eb',
     glyph: '#ffffff',
-    textClass: 'text-indigo-400',
-    markerColor: '#6366f1',
+    textClass: 'text-blue-400',
+    markerColor: '#3b82f6',
   },
   'América del Norte': {
     label: 'América del Norte',

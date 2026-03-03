@@ -14,6 +14,8 @@ export interface MusicMix {
     lat: number;
     lng: number;
   };
+  jitterLat?: number;
+  jitterLng?: number;
 }
 
 export type ContinentKey =

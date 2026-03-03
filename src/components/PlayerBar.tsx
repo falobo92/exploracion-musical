@@ -456,7 +456,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
 
   const isVisible = !!currentMix;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const accentColor = currentMix ? getContinentStyle(currentMix.continent).markerColor : '#6366f1';
+  const accentColor = currentMix ? getContinentStyle(currentMix.continent).markerColor : '#10b981';
 
   return (
     <>
@@ -484,12 +484,12 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
       <div className={`w-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] origin-bottom ${
         isVisible ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-12 opacity-0 scale-95 pointer-events-none'
       }`}>
-        <div className="player-glass rounded-[2.5rem] overflow-hidden">
+        <div className="bg-zinc-950/90 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl shadow-black/80">
           {/* Top progress bar */}
           <div className="h-1 bg-white/5 cursor-pointer group hover:h-1.5 transition-all relative z-10" onClick={handleSeek}>
             <div
               className="h-full relative transition-all duration-200 progress-glow"
-              style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}, #8b5cf6)` }}
+              style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}, #14b8a6)` }}
             >
               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform" />
             </div>
@@ -599,9 +599,9 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                       <h4 className="text-white font-semibold truncate text-[13px] sm:text-sm">{currentMix.artist}</h4>
                       {isPlaying && (
                         <div className="hidden sm:flex gap-[2px] items-end h-3 shrink-0">
-                          <div className="w-[2px] bg-indigo-400 rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
-                          <div className="w-[2px] bg-indigo-400 rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
-                          <div className="w-[2px] bg-indigo-400 rounded-full eq-bar" style={{ '--eq-duration': '0.4s', '--eq-delay': '0.2s' } as React.CSSProperties} />
+                          <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
+                          <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
+                          <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.4s', '--eq-delay': '0.2s' } as React.CSSProperties} />
                         </div>
                       )}
                       <span className="text-zinc-600 text-[10px] font-mono shrink-0 ml-auto tabular-nums">
@@ -618,7 +618,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                           href={`https://music.youtube.com/watch?v=${currentMix.videoId}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[10px] text-zinc-500 hover:text-indigo-400 transition-colors flex items-center gap-1 shrink-0"
+                          className="text-[10px] text-zinc-500 hover:text-emerald-400 transition-colors flex items-center gap-1 shrink-0"
                           title="Escuchar en YouTube Music"
                         >
                           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
@@ -635,7 +635,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                   <span className="w-8 text-right tabular-nums hidden sm:inline">{formatTime(currentTime)}</span>
                   <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden cursor-pointer shadow-inner" onClick={handleSeek}>
                     <div className="h-full rounded-full transition-all duration-200"
-                      style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}dd, #8b5cf6dd)` }} />
+                      style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}dd, #14b8a6dd)` }} />
                   </div>
                   <span className="w-8 tabular-nums hidden sm:inline">{formatTime(duration)}</span>
                   <span className="text-[9px] tabular-nums sm:hidden">{formatTime(currentTime)}</span>
@@ -648,7 +648,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                 <button
                   onClick={onToggleShuffle}
                   className={`w-8 h-8 rounded-full hidden sm:inline-flex items-center justify-center transition-all ${
-                    shuffle ? 'bg-indigo-500/15 text-indigo-400' : 'text-zinc-600 hover:text-zinc-300'
+                    shuffle ? 'bg-emerald-500/15 text-emerald-400' : 'text-zinc-600 hover:text-zinc-300'
                   }`}
                   aria-label="Modo aleatorio"
                 >
@@ -722,7 +722,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                     )}
                   </button>
                   <input type="range" min="0" max="100" value={volume} onChange={handleVolumeChange}
-                    aria-label="Volumen" className="w-20 h-1.5 rounded-full appearance-none bg-zinc-700 cursor-pointer accent-indigo-500" />
+                    aria-label="Volumen" className="w-20 h-1.5 rounded-full appearance-none bg-zinc-700 cursor-pointer accent-emerald-500" />
                 </div>
               </div>
             </div>

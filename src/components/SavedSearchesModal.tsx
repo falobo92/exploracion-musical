@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { MusicMix, SearchCriteria, SavedSearch } from '@/types';
 
 interface SavedSearchesModalProps {
@@ -55,8 +56,6 @@ export const SavedSearchesModal: React.FC<SavedSearchesModalProps> = ({
   const [justSaved, setJustSaved] = useState(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
-  if (!isOpen) return null;
-
   const handleSave = () => {
     const name = saveName.trim() || buildDefaultName(currentCriteria);
     onSave(name, currentCriteria, currentMixes);
@@ -82,10 +81,23 @@ export const SavedSearchesModal: React.FC<SavedSearchesModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl">
-        {/* Header */}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+        >
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+          <motion.div
+            initial={{ scale: 0.95, y: 20, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, y: 20, opacity: 0 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl"
+          >
+            {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/50 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
@@ -250,7 +262,9 @@ export const SavedSearchesModal: React.FC<SavedSearchesModalProps> = ({
             </button>
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

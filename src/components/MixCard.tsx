@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import type { MusicMix } from '@/types';
 import { getContinentStyle } from '@/constants/continents';
 
@@ -18,21 +19,98 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
     : `https://music.youtube.com/search?q=${encodeURIComponent(mix.searchQuery)}`;
 
   return (
-    <div
-      className={`animate-card-enter relative rounded-[1.25rem] flex flex-col justify-between h-full group cursor-pointer overflow-hidden transition-all duration-500 ${
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.4), ease: [0.23, 1, 0.32, 1] }}
+      className={`relative rounded-2xl flex items-stretch gap-4 p-3 group cursor-pointer transition-all duration-300 ${
         isCurrent
-          ? 'glass-card bg-gradient-to-br from-indigo-500/15 to-purple-500/5 border-indigo-500/40 shadow-[0_8px_32px_rgba(99,102,241,0.2)] ring-1 ring-indigo-500/50 scale-[1.02] z-10'
-          : 'glass-card hover:bg-white/5 hover:border-white/20 hover:shadow-[0_8px_32px_rgba(255,255,255,0.05)] hover:-translate-y-1'
+          ? 'bg-zinc-800/90 border border-emerald-500/50 shadow-[0_8px_30px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/30'
+          : 'bg-zinc-900/50 hover:bg-zinc-800/80 border border-white/5 hover:border-white/10 hover:shadow-xl hover:-translate-y-[2px]'
       }`}
-      style={{ animationDelay: `${index * 50}ms` }}
       onClick={() => onPlay(mix)}
     >
-      {/* Botón YouTube Music — Siempre visible para móvil */}
+      {/* Thumbnail */}
+      <div className="relative w-24 h-24 sm:w-[104px] sm:h-[104px] rounded-xl overflow-hidden shrink-0 bg-zinc-800 shadow-md">
+        {mix.videoId ? (
+          <img
+            src={`https://img.youtube.com/vi/${mix.videoId}/mqdefault.jpg`}
+            alt=""
+            className={`w-full h-full object-cover transition-transform duration-700 ${isCurrent ? 'scale-105' : 'group-hover:scale-110'}`}
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-zinc-800/80">
+            <svg className="w-8 h-8 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+            </svg>
+          </div>
+        )}
+
+        {/* Play Overlay */}
+        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-all duration-300 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+          {isCurrent && isPlaying ? (
+            <div className="w-10 h-10 rounded-full bg-emerald-500 text-zinc-950 flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
+            </div>
+          ) : (
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-transform ${isCurrent ? 'bg-emerald-500 text-zinc-950' : 'bg-white/95 text-zinc-950 scale-90 group-hover:scale-100'}`}>
+              <svg className="w-5 h-5 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center py-0.5">
+        {/* Header: continent + country */}
+        <div className="flex items-center gap-2 mb-1.5">
+          <div
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: style.markerColor, boxShadow: `0 0 6px ${style.markerColor}` }}
+          />
+          <span className={`text-[9px] font-bold tracking-widest uppercase truncate ${style.textClass}`}>
+            {mix.continent} <span className="text-zinc-600 mx-1">&middot;</span> <span className="text-zinc-400">{mix.country}</span>
+          </span>
+        </div>
+
+        {/* Artist & EQ */}
+        <div className="flex items-center gap-2 pr-8">
+          <h3 className={`text-base sm:text-lg font-black truncate leading-tight transition-colors ${isCurrent ? 'text-transparent bg-clip-text bg-gradient-to-br from-emerald-300 to-teal-400' : 'text-zinc-100 group-hover:text-white'}`}>
+            {mix.artist}
+          </h3>
+          {isCurrent && isPlaying && (
+            <div className="flex gap-[2px] items-end h-3 shrink-0 ml-auto">
+              <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
+              <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
+              <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.45s', '--eq-delay': '0.2s' } as React.CSSProperties} />
+            </div>
+          )}
+        </div>
+
+        {/* Song Title */}
+        {mix.songTitle && (
+          <p className={`text-xs mt-0.5 truncate ${isCurrent ? 'text-emerald-200/90' : 'text-zinc-400'}`}>
+            {mix.songTitle}
+          </p>
+        )}
+
+        {/* Tags */}
+        <div className="flex flex-wrap items-center gap-1.5 mt-auto pt-2">
+          <span className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 border border-white/5 text-zinc-300 text-[10px] font-bold tracking-wide">{mix.year}</span>
+          <span className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 border border-white/5 text-zinc-300 text-[10px] font-bold tracking-wide truncate max-w-[100px]">{mix.style}</span>
+          <span className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 border border-white/5 text-zinc-300 text-[10px] font-bold tracking-wide font-mono">{mix.bpm} BPM</span>
+        </div>
+      </div>
+
+      {/* External Link (YT Music) */}
       <a
         href={ytMusicUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-red-600 rounded-full text-white/90 shadow-lg backdrop-blur-sm transition-all z-20"
+        className="absolute top-3 right-3 p-1.5 bg-zinc-900/80 hover:bg-red-500/90 rounded-lg text-zinc-400 hover:text-white backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all shadow-lg z-20"
         title="Abrir en YouTube Music"
         onClick={(e) => e.stopPropagation()}
       >
@@ -41,108 +119,7 @@ export const MixCard: React.FC<MixCardProps> = React.memo(({ mix, onPlay, isPlay
           <path d="M10 15l5-3-5-3v6z" />
         </svg>
       </a>
-
-      {/* Accent strip lateral */}
-      <div
-        className="card-accent"
-        style={{ background: isCurrent ? '#6366f1' : style.markerColor }}
-      />
-
-      {/* Thumbnail background si hay videoId */}
-      {mix.videoId && (
-        <div className="absolute inset-0 opacity-0 group-hover:opacity-[0.06] transition-opacity duration-500">
-          <img
-            src={`https://img.youtube.com/vi/${mix.videoId}/mqdefault.jpg`}
-            alt=""
-            className="w-full h-full object-cover blur-sm"
-            loading="lazy"
-          />
-        </div>
-      )}
-
-      <div className="relative p-5 pl-6">
-        {/* Header: continent dot + tags */}
-        <div className="flex items-center gap-2 mb-3">
-          <div
-            className="w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ background: style.markerColor, boxShadow: `0 0 8px ${style.markerColor}40` }}
-          />
-          <span className={`text-xs font-semibold tracking-wider uppercase ${style.textClass}`}>
-            {mix.continent}
-          </span>
-          <span className="text-zinc-600 text-xs">·</span>
-          <span className="text-xs font-medium tracking-wide uppercase text-zinc-400">
-            {mix.country}
-          </span>
-        </div>
-
-        {/* Artista */}
-        <div className="flex items-center gap-2 mb-1">
-          <h3
-            className={`text-2xl font-extrabold transition-colors duration-300 leading-tight tracking-tight ${
-              isCurrent ? 'text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-purple-300 glow-text' : 'text-zinc-100 group-hover:text-white'
-            }`}
-          >
-            {mix.artist}
-          </h3>
-          {isCurrent && isPlaying && (
-            <div className="flex gap-[3px] items-end h-4 ml-1 shrink-0">
-              <div className="w-[3px] bg-indigo-400 rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
-              <div className="w-[3px] bg-indigo-400 rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
-              <div className="w-[3px] bg-indigo-400 rounded-full eq-bar" style={{ '--eq-duration': '0.45s', '--eq-delay': '0.2s' } as React.CSSProperties} />
-              <div className="w-[3px] bg-indigo-400 rounded-full eq-bar" style={{ '--eq-duration': '0.65s', '--eq-delay': '0.15s' } as React.CSSProperties} />
-            </div>
-          )}
-        </div>
-
-        {/* Canción */}
-        {mix.songTitle && (
-          <p className={`text-base font-medium mb-2 truncate transition-colors duration-300 ${isCurrent ? 'text-indigo-200/90' : 'text-zinc-300 group-hover:text-indigo-200/80'}`}>{mix.songTitle}</p>
-        )}
-
-        {/* Style + BPM + Year */}
-        <div className="text-zinc-400 text-[13px] font-mono mb-3 flex items-center gap-1.5">
-          <span className="text-zinc-300 font-semibold">{mix.year}</span>
-          <span className="text-zinc-600">·</span>
-          <span>{mix.style}</span>
-          <span className="text-zinc-600">·</span>
-          <span>{mix.bpm} BPM</span>
-        </div>
-
-        {/* Description */}
-        <p className="text-zinc-300 text-[15px] leading-relaxed line-clamp-6">{mix.description}</p>
-      </div>
-
-      {/* Play button */}
-      <div className="relative px-5 pl-6 pb-5 pt-0 mt-auto">
-        <div className="pt-3">
-          <button
-            onClick={e => { e.stopPropagation(); onPlay(mix); }}
-            className={`w-full text-center text-sm font-bold py-3 px-4 rounded-full transition-all duration-300 flex items-center justify-center gap-2 ${
-              isCurrent && isPlaying
-                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex shadow-[0_0_15px_rgba(99,102,241,0.3)]'
-                : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 hover:border-white/20 hover:shadow-[0_5px_15px_rgba(0,0,0,0.3)]'
-            }`}
-          >
-            {isCurrent && isPlaying ? (
-              <>
-                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-                </svg>
-                Pausar
-              </>
-            ) : (
-              <>
-                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                {isCurrent ? 'Reanudar' : 'Reproducir'}
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
+    </motion.div>
   );
 });
 
