@@ -21,6 +21,7 @@ interface AudioCacheEntry {
 
 const CACHE_TTL = 5 * 60 * 60 * 1000;
 const audioCache = new Map<string, AudioCacheEntry>();
+const inflightAudioRequests = new Map<string, Promise<string | null>>();
 
 function getCachedUrl(videoId: string): string | null {
   const entry = audioCache.get(videoId);
@@ -76,6 +77,8 @@ async function fetchStream(videoId: string, instance: string, type: 'piped' | 'i
 export async function getAudioUrl(videoId: string): Promise<string | null> {
   const cached = getCachedUrl(videoId);
   if (cached) return cached;
+  const inflight = inflightAudioRequests.get(videoId);
+  if (inflight) return inflight;
 
   const shuffle = (arr: string[]) => [...arr].sort(() => 0.5 - Math.random());
 
@@ -84,23 +87,38 @@ export async function getAudioUrl(videoId: string): Promise<string | null> {
     ...shuffle(INVIDIOUS_INSTANCES).slice(0, 1).map(url => ({ url, type: 'invidious' as const }))
   ];
 
-  try {
-    const url = await Promise.any(
-      candidates.map(c => fetchStream(videoId, c.url, c.type))
-    );
+  const request = (async () => {
+    try {
+      const url = await Promise.any(
+        candidates.map(c => fetchStream(videoId, c.url, c.type))
+      );
 
-    if (url) {
-      setCachedUrl(videoId, url);
-      return url;
+      if (url) {
+        setCachedUrl(videoId, url);
+        return url;
+      }
+    } catch (e) {
+      console.warn('Todos los proxies fallaron o timeout', e);
     }
-  } catch (e) {
-    console.warn('Todos los proxies fallaron o timeout', e);
-  }
 
-  return null;
+    return null;
+  })();
+
+  inflightAudioRequests.set(videoId, request);
+
+  try {
+    return await request;
+  } finally {
+    inflightAudioRequests.delete(videoId);
+  }
 }
 
 export function clearAudioCache(videoId?: string) {
-  if (videoId) audioCache.delete(videoId);
-  else audioCache.clear();
+  if (videoId) {
+    audioCache.delete(videoId);
+    inflightAudioRequests.delete(videoId);
+  } else {
+    audioCache.clear();
+    inflightAudioRequests.clear();
+  }
 }

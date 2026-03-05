@@ -47,13 +47,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClearAll,
 }) => {
   const [showConfirmClear, setShowConfirmClear] = useState(false);
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
 
   const geminiStatus = validateKeyFormat(geminiKey, 'api');
   const youtubeStatus = validateKeyFormat(youtubeApiKey, 'youtube');
   const clientIdStatus = validateKeyFormat(googleClientId, 'client');
 
   const inputClass =
-    'w-full bg-zinc-950 border border-zinc-700/50 text-white px-3 py-2.5 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all text-sm';
+    'w-full bg-zinc-950 border border-zinc-700/50 text-white px-3 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all text-sm';
 
   return (
     <AnimatePresence>
@@ -62,7 +63,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md"
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 backdrop-blur-md"
           onClick={e => {
             if (e.target === e.currentTarget) onClose();
           }}
@@ -72,10 +73,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.9, y: 20, opacity: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="bg-zinc-900 border border-zinc-700/50 rounded-2xl w-full max-w-md p-6 shadow-2xl mx-4 max-h-[90vh] overflow-y-auto"
+            className="bg-[linear-gradient(180deg,rgba(24,24,27,0.98),rgba(9,9,11,0.98))] border border-white/10 rounded-3xl w-full max-w-2xl p-6 shadow-2xl mx-4 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-white">Configuración</h2>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-zinc-500">Credenciales</p>
+            <h2 className="text-2xl font-black text-white mt-1">Configuración</h2>
+          </div>
           <button
             onClick={onClose}
             className="text-zinc-500 hover:text-white transition-colors p-1"
@@ -107,7 +111,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 href="https://aistudio.google.com/apikey"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="text-emerald-400 hover:text-emerald-300 transition-colors"
               >
                 Obtener clave
               </a>
@@ -128,7 +132,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               placeholder="AIza..."
             />
             <p className="text-zinc-600 text-xs mt-1.5">
-              Para búsquedas musicales y reproducción rápida en segundo plano. No requiere login.
+              Opcional. Acelera búsquedas y prefetch de videos sin pedir login. La reproducción también puede usar OAuth o el proxy cuando haga falta.
             </p>
           </div>
 
@@ -146,41 +150,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               placeholder="123456789-abc.apps.googleusercontent.com"
             />
             <p className="text-zinc-600 text-xs mt-1.5">
-              Para buscar videos (reproducir) y guardar playlists en tu cuenta de YouTube.
+              Necesario para crear playlists en tu cuenta y sirve como respaldo para búsquedas autenticadas.
               <br />
               <span className="text-zinc-500 text-[10px] leading-relaxed block mt-1">
-                Configura en Google Cloud Console:<br />
-                • Orígenes de JavaScript: <span className="text-indigo-400 font-mono">http://localhost:3000</span><br />
-                • URIs de redireccionamiento: <span className="text-indigo-400 font-mono">http://localhost:3000</span>
+                Configura en Google Cloud Console este origen:<br />
+                • Orígenes de JavaScript: <span className="text-emerald-400 font-mono">{currentOrigin}</span><br />
+                • URIs de redireccionamiento: <span className="text-emerald-400 font-mono">{currentOrigin}</span>
               </span>
             </p>
           </div>
 
           {/* Tip .env */}
-          <div className="bg-indigo-500/10 rounded-xl p-4 border border-indigo-500/20">
-            <p className="text-indigo-300 text-xs leading-relaxed">
+          <div className="bg-emerald-500/10 rounded-2xl p-4 border border-emerald-500/20">
+            <p className="text-emerald-200 text-xs leading-relaxed">
               <span className="font-semibold">Tip:</span> Configura las claves en un archivo{' '}
-              <code className="bg-zinc-800 px-1.5 py-0.5 rounded text-indigo-200">.env</code> en la raíz del proyecto:
+              <code className="bg-zinc-800 px-1.5 py-0.5 rounded text-emerald-100">.env</code> en la raíz del proyecto:
             </p>
-            <pre className="text-indigo-200/70 text-[11px] mt-2 font-mono leading-relaxed overflow-x-auto">
+            <pre className="text-emerald-100/70 text-[11px] mt-2 font-mono leading-relaxed overflow-x-auto">
               {`VITE_GEMINI_API_KEY=tu_clave\nVITE_YOUTUBE_API_KEY=tu_clave_youtube\nVITE_GOOGLE_CLIENT_ID=tu_client_id`}
             </pre>
           </div>
 
           {/* Ayuda */}
-          <div className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/30">
+          <div className="bg-zinc-800/40 rounded-2xl p-4 border border-zinc-700/30">
             <p className="text-zinc-400 text-xs leading-relaxed">
-              <span className="font-semibold text-zinc-300">¿Cómo obtener las claves?</span>
+              <span className="font-semibold text-zinc-300">Qué desbloquea cada credencial</span>
               <br />
               <br />
-              <strong className="text-zinc-300">Gemini:</strong> Ve a{' '}
+              <strong className="text-zinc-300">Gemini:</strong> generación curada de mixes con IA. Ve a{' '}
               <a href="https://aistudio.google.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300">
                 aistudio.google.com
               </a>{' '}
               y genera una clave API.
               <br />
               <br />
-              <strong className="text-zinc-300">Google Cloud:</strong>
+              <strong className="text-zinc-300">YouTube Data API:</strong> mejora búsquedas sin login y reduce esperas al empezar a reproducir.
+              <br />
+              <br />
+              <strong className="text-zinc-300">Google OAuth:</strong>
               <br />
               1. Ve a{' '}
               <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300">
@@ -228,7 +235,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={onClose}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors"
+            className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 px-5 py-2.5 rounded-xl font-semibold text-sm transition-colors"
           >
             Cerrar
           </button>

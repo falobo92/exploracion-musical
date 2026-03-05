@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
+const SEARCH_MAX_RESULTS = 12;
 
 const ipHits = new Map<string, { count: number; windowStart: number }>();
 const RATE_WINDOW_MS = 60_000;
@@ -46,11 +47,67 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return res.end(JSON.stringify({ error: "YouTube API key not configured on server" }));
   }
 
-  const ytUrl = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(q)}&maxResults=5&type=video&videoEmbeddable=true&key=${apiKey}`;
-
   try {
-    const upstream = await fetch(ytUrl);
+    const searchParams = new URLSearchParams({
+      part: "id,snippet",
+      q,
+      maxResults: String(SEARCH_MAX_RESULTS),
+      type: "video",
+      videoEmbeddable: "true",
+      videoDuration: "medium",
+      safeSearch: "none",
+      key: apiKey,
+    });
+    const searchUrl = `${YOUTUBE_API_BASE}/search?${searchParams.toString()}`;
+    const upstream = await fetch(searchUrl);
     const data = await upstream.json();
+
+    if (!upstream.ok) {
+      res.writeHead(upstream.status, {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=3600",
+      });
+      return res.end(JSON.stringify(data));
+    }
+
+    const videoIds = (data.items ?? [])
+      .map((item: any) => item.id?.videoId)
+      .filter((videoId: string | undefined): videoId is string => Boolean(videoId));
+
+    if (videoIds.length > 0) {
+      const videosParams = new URLSearchParams({
+        part: "snippet,contentDetails,statistics",
+        id: videoIds.join(","),
+        maxResults: String(videoIds.length),
+        key: apiKey,
+      });
+      const videosUrl = `${YOUTUBE_API_BASE}/videos?${videosParams.toString()}`;
+      const videoResponse = await fetch(videosUrl);
+      const videoData = await videoResponse.json().catch(() => ({ items: [] }));
+
+      if (videoResponse.ok) {
+        const videosById = new Map<string, any>(
+          (videoData.items ?? [])
+            .map((item: any) => [item.id, item] as const)
+            .filter((entry: readonly [string | undefined, any]): entry is readonly [string, any] => Boolean(entry[0])),
+        );
+
+        data.items = (data.items ?? []).map((item: any) => {
+          const enriched = videosById.get(item.id?.videoId);
+          if (!enriched) return item;
+
+          return {
+            ...item,
+            snippet: {
+              ...item.snippet,
+              ...enriched.snippet,
+            },
+            contentDetails: enriched.contentDetails,
+            statistics: enriched.statistics,
+          };
+        });
+      }
+    }
 
     res.writeHead(upstream.status, {
       "Content-Type": "application/json",

@@ -13,7 +13,7 @@ function matchesCountry(mix: MusicMix, criteria: SearchCriteria): boolean {
 
 function matchesStyle(mix: MusicMix, criteria: SearchCriteria): boolean {
   if (!criteria.style) return true;
-  return mix.style.toLowerCase().includes(criteria.style.toLowerCase());
+  return normalizeForCompare(mix.style).includes(normalizeForCompare(criteria.style));
 }
 
 function matchesYear(mix: MusicMix, criteria: SearchCriteria): boolean {

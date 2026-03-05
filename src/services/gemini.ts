@@ -19,6 +19,25 @@ interface GeminiTrackResponse {
   searchQuery?: string;
 }
 
+interface IntentGuidance {
+  hardRules: string[];
+  avoidTerms: string[];
+  preferTerms: string[];
+  strictnessBoost: number;
+}
+
+const VALID_CONTINENTS: Record<string, MusicMix['continent']> = {
+  africa: 'África',
+  asia: 'Asia',
+  europa: 'Europa',
+  europe: 'Europa',
+  'america del norte': 'América del Norte',
+  'north america': 'América del Norte',
+  'america del sur': 'América del Sur',
+  'south america': 'América del Sur',
+  oceania: 'Oceanía',
+};
+
 class GeminiError extends Error {
   constructor(
     message: string,
@@ -71,6 +90,122 @@ function classifyError(error: unknown): GeminiError {
   if (/network|fetch|abort|timeout|ECONNREFUSED/i.test(msg))
     return new GeminiError('Error de red al contactar la IA.', 'NETWORK');
   return new GeminiError(msg || 'Error desconocido al generar.', 'UNKNOWN');
+}
+
+function normalizeText(value: unknown, fallback = ''): string {
+  return String(value ?? fallback)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeKey(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function normalizeYear(value: unknown): string {
+  const match = String(value ?? '').match(/\b(18|19|20)\d{2}\b/);
+  return match ? match[0] : '';
+}
+
+function normalizeBpm(value: unknown): number {
+  const bpm = Number(value);
+  if (!Number.isFinite(bpm)) return 100;
+  return Math.max(50, Math.min(220, Math.round(bpm)));
+}
+
+function normalizeContinent(value: unknown, fallback = ''): MusicMix['continent'] {
+  const resolved = VALID_CONTINENTS[normalizeKey(String(value ?? ''))]
+    || VALID_CONTINENTS[normalizeKey(fallback)];
+  return resolved ?? 'Desconocido';
+}
+
+function buildCanonicalSearchQuery(artist: string, songTitle: string): string {
+  return `${artist} - ${songTitle}`;
+}
+
+function isSpecificSearch(criteria: SearchCriteria): boolean {
+  return Boolean(
+    criteria.descriptiveQuery.trim()
+    || criteria.country
+    || criteria.style
+    || criteria.year
+    || criteria.bpm
+    || criteria.continent,
+  );
+}
+
+function extractIntentGuidance(criteria: SearchCriteria): IntentGuidance {
+  const query = normalizeKey(criteria.descriptiveQuery);
+  const hardRules: string[] = [];
+  const avoidTerms = new Set<string>();
+  const preferTerms = new Set<string>();
+  let strictnessBoost = 0;
+
+  const mentionsChile = /\b(chile|chilena|chileno|chilenas|chilenos)\b/.test(query)
+    || normalizeKey(criteria.country) === 'chile';
+
+  const antiTraditional =
+    /(muy poco|poco|nada|menos|no)\s+tradicional/.test(query)
+    || /anti\s*tradicional/.test(query)
+    || /alejad[oa] de lo tradicional/.test(query);
+
+  if (antiTraditional) {
+    hardRules.push(
+      'Si el usuario pide algo poco o nada tradicional, evita propuestas folclóricas, patrimoniales o de raíz salvo que el usuario las haya pedido explícitamente.',
+      'Interpreta "poco tradicional" como una restricción dura: prioriza escenas alternativas, híbridas, experimentales, urbanas o mutantes del país/región solicitada.',
+    );
+    ['tradicional', 'folclor', 'folklore', 'folk', 'raiz', 'de raiz', 'patrimonial'].forEach((term) => avoidTerms.add(term));
+    ['experimental', 'alternativo', 'mutante', 'hibrido', 'vanguardista', 'raro', 'outsider'].forEach((term) => preferTerms.add(term));
+    strictnessBoost += 0.2;
+
+    if (mentionsChile) {
+      ['cueca', 'tonada', 'nueva cancion', 'andina', 'paya'].forEach((term) => avoidTerms.add(term));
+      ['post-punk', 'electronica', 'industrial', 'indie', 'synth', 'noise', 'hip hop raro'].forEach((term) => preferTerms.add(term));
+      hardRules.push(
+        'Para Chile poco tradicional, evita cueca, tonada, folclor andino o nueva canción salvo petición explícita; busca escenas chilenas extrañas, periféricas o contemporáneas.',
+      );
+    }
+  }
+
+  if (/(poco|nada|no)\s+comercial|anti\s*mainstream|raro|extran[oa]|outsider|de nicho/.test(query)) {
+    hardRules.push(
+      'Si el usuario pide algo poco comercial o de nicho, evita artistas obvios, clásicos masivos y picks de canon demasiado conocidos.',
+    );
+    ['mainstream', 'obvio', 'canonico', 'masivo'].forEach((term) => avoidTerms.add(term));
+    ['de culto', 'de nicho', 'periferico', 'oculto', 'culto'].forEach((term) => preferTerms.add(term));
+    strictnessBoost += 0.15;
+  }
+
+  if (/(experimental|mutante|deconstruid[oa]|vanguardista|avant|ruidos[oa]|oscur[oa])/.test(query)) {
+    hardRules.push(
+      'Si el usuario usa términos como experimental, oscuro o mutante, prioriza propuestas extremas o híbridas antes que versiones suaves o tradicionales del género.',
+    );
+    ['experimental', 'oscuro', 'abrasivo', 'mutante', 'deconstruido', 'avant-garde'].forEach((term) => preferTerms.add(term));
+    strictnessBoost += 0.1;
+  }
+
+  return {
+    hardRules,
+    avoidTerms: Array.from(avoidTerms),
+    preferTerms: Array.from(preferTerms),
+    strictnessBoost,
+  };
+}
+
+function violatesPromptIntent(
+  style: string,
+  description: string,
+  searchQuery: string,
+  intent: IntentGuidance,
+): boolean {
+  if (intent.avoidTerms.length === 0) return false;
+
+  const haystack = normalizeKey(`${style} ${description} ${searchQuery}`);
+  return intent.avoidTerms.some((term) => haystack.includes(normalizeKey(term)));
 }
 
 // ─── DATASETS FOR RANDOM SEEDING ───
@@ -146,13 +281,17 @@ export async function generateStrangeMixes(
 
   const ai = new GoogleGenAI({ apiKey });
   const count = criteria.songCount || 15;
+  const specificSearch = isSpecificSearch(criteria);
+  const intentGuidance = extractIntentGuidance(criteria);
+  const requestedCount = Math.min(count + (specificSearch ? 5 : 7), 30);
+  const temperature = Math.max(0.45, (specificSearch ? 0.85 : 1.15) - intentGuidance.strictnessBoost);
 
   // ── Construir contexto musical (Inputs como dirección creativa, no filtros estrictos) ──
   const contextParts: string[] = [];
 
   // Random Seeds para forzar variabilidad
-  const randomGenres = getRandomSubset(NICHE_GENRES, 5);
-  const randomRegions = getRandomSubset(UNUSUAL_REGIONS, 3);
+  const randomGenres = getRandomSubset(NICHE_GENRES, specificSearch ? 2 : 5);
+  const randomRegions = getRandomSubset(UNUSUAL_REGIONS, specificSearch ? 1 : 3);
   
   contextParts.push(`CREATIVE SEEDS (Use these as inspiration for variety if they fit the vibe):
   - Genres to consider: ${randomGenres.join(', ')}
@@ -162,6 +301,21 @@ export async function generateStrangeMixes(
   if (criteria.descriptiveQuery?.trim()) {
     contextParts.push(`CORE THEME: "${criteria.descriptiveQuery.trim()}"
     (This is the primary inspiration. All other inputs should be interpreted to support this theme.)`);
+  }
+
+  if (intentGuidance.hardRules.length > 0) {
+    contextParts.push(`HARD INTENT RULES:
+    ${intentGuidance.hardRules.map((rule, index) => `${index + 1}. ${rule}`).join('\n    ')}`);
+  }
+
+  if (intentGuidance.avoidTerms.length > 0) {
+    contextParts.push(`NEGATIVE CONSTRAINTS:
+    Avoid these words/concepts unless the user explicitly asked for them: ${intentGuidance.avoidTerms.join(', ')}.`);
+  }
+
+  if (intentGuidance.preferTerms.length > 0) {
+    contextParts.push(`PREFERRED DIRECTION:
+    If multiple candidates fit, prioritize: ${intentGuidance.preferTerms.join(', ')}.`);
   }
 
   // 2. Regional Focus (Enfoque Regional)
@@ -205,13 +359,14 @@ export async function generateStrangeMixes(
     ROLE: Eres un Etnomusicólogo experto y DJ de clase mundial especializado en Rare Grooves, Música del Mundo y Fusiones Eclécticas.
     Tu superpoder es conectar puntos musicales inesperados y crear viajes sonoros coherentes basados en inputs abstractos o específicos.
     
-    TASK: Cura una lista de reproducción de exactamente ${count} pistas reales y verificables.
+    TASK: Cura una lista de reproducción de exactamente ${requestedCount} pistas reales y verificables.
     
     CURATION PHILOSOPHY:
     - **VARIABILIDAD EXTREMA**: Evita repetir los mismos artistas o géneros obvios. Sorprende al usuario.
     - **ANTI-MAINSTREAM**: Prioriza artistas con < 500k oyentes mensuales. Busca joyas ocultas, lados B, ediciones privadas y artistas de culto.
     - **DIVERSIDAD GEOGRÁFICA**: A menos que se especifique una región, incluye música de al menos 4 continentes diferentes.
-    - Prioriza la "VIBRA" y la calidad musical sobre la adherencia estricta a reglas si hay conflicto.
+    - Mantén coherencia musical, pero si el usuario dio filtros específicos debes respetarlos con precisión.
+    - Las NEGATIVE CONSTRAINTS y HARD INTENT RULES son obligatorias. Nunca las trates como sugerencias.
     - Si el usuario pide "Música para dormir" (Core Theme) pero selecciona "Heavy Metal" (Flavor), prioriza el Core Theme (quizás baladas de metal o instrumentales suaves).
 
     ${musicalContext}
@@ -228,6 +383,7 @@ export async function generateStrangeMixes(
     5. 'continent' → Uno de: "África", "Asia", "Europa", "América del Norte", "América del Sur", "Oceanía".
     6. 'country' → Nombre del país en español.
     7. DIVERSIDAD: Si no se especifica una era, viaja por el tiempo. Si no se especifica región, viaja por el mundo.
+    8. OBEDIENCIA DE INTENCIÓN: si el usuario expresó exclusiones, negaciones o matices ("poco tradicional", "no comercial", "oscuro", "experimental"), tu selección debe reflejar eso explícitamente.
 
     REQUIRED JSON FIELDS PER TRACK:
     - style: Género específico en español.
@@ -277,7 +433,7 @@ export async function generateStrangeMixes(
           config: {
             responseMimeType: 'application/json',
             responseSchema,
-            temperature: 1.5, // Aumentado para mayor creatividad
+            temperature,
           },
         }),
         TIMEOUT_MS
@@ -297,27 +453,45 @@ export async function generateStrangeMixes(
         throw new GeminiError('La IA devolvió una lista vacía.', 'PARSE');
       }
 
-      return data.map((item, index): MusicMix => {
-        const country = String(item.country || 'Mundo');
-        const continent = String(item.continent || 'Desconocido');
-        const artist = String(item.artist || 'Artista Desconocido');
-        const title = String(item.songTitle || 'Pista');
-        const style = String(item.style || 'Varios');
+      const seen = new Set<string>();
+      const normalizedMixes: MusicMix[] = [];
 
-        return {
+      data.forEach((item, index) => {
+        const artist = normalizeText(item.artist, 'Artista desconocido');
+        const songTitle = normalizeText(item.songTitle, 'Pista desconocida');
+        const style = normalizeText(item.style, criteria.style || 'Descubrimiento global');
+        const country = normalizeText(item.country, criteria.country || 'Desconocido');
+        const continent = normalizeContinent(item.continent, criteria.continent);
+        const year = normalizeYear(item.year);
+        const description = normalizeText(item.description, 'Selección curada para esta exploración.');
+        const dedupeKey = `${normalizeKey(artist)}::${normalizeKey(songTitle)}`;
+
+        if (!artist || !songTitle || seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+
+        const searchQuery = buildCanonicalSearchQuery(artist, songTitle);
+        if (violatesPromptIntent(style, description, searchQuery, intentGuidance)) return;
+
+        normalizedMixes.push({
           id: `mix-${Date.now()}-${index}`,
           style,
           country,
-          continent: continent as MusicMix['continent'],
+          continent,
           artist,
-          songTitle: title,
-          year: String(item.year || ''),
-          bpm: Number(item.bpm) || 100,
-          description: String(item.description || ''),
-          searchQuery: item.searchQuery || `${artist} - ${title}`,
+          songTitle,
+          year,
+          bpm: normalizeBpm(item.bpm),
+          description,
+          searchQuery,
           coordinates: getCoordsForCountry(country, continent),
-        };
+        });
       });
+
+      if (normalizedMixes.length === 0) {
+        throw new GeminiError('La IA devolvió pistas vacías o duplicadas.', 'PARSE');
+      }
+
+      return normalizedMixes.slice(0, count);
     } catch (error: unknown) {
       throw classifyError(error);
     }

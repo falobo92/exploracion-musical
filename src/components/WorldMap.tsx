@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'rea
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import type { MusicMix } from '@/types';
-import { getContinentStyle } from '@/constants/continents';
+import { CONTINENT_OPTIONS, getContinentStyle } from '@/constants/continents';
 
 interface WorldMapProps {
   mixes: MusicMix[];
@@ -12,6 +12,12 @@ interface WorldMapProps {
   selectedId?: string;
   playingId?: string;
   className?: string;
+  leftInset?: number;
+  rightInset?: number;
+  topInset?: number;
+  bottomInset?: number;
+  showLegend?: boolean;
+  zoomPosition?: 'topleft' | 'topright' | 'bottomleft' | 'bottomright';
 }
 
 const NOTE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><circle cx="12" cy="12" r="8" fill="currentColor" /><circle cx="12" cy="12" r="4" fill="var(--marker-color)" stroke="#fff" stroke-width="1.5" /></svg>`;
@@ -24,6 +30,35 @@ const EQ_BARS_SVG = `
     <span class="marker-eq-bar" style="--bar-h:80%;--bar-d:0.15s;--bar-s:0.45s"></span>
   </div>
 `;
+
+function createClusterIcon(count: number): L.DivIcon {
+  return L.divIcon({
+    className: '',
+    iconSize: [54, 54],
+    iconAnchor: [27, 27],
+    html: `
+      <div class="map-cluster">
+        <div class="map-cluster__inner">${count}</div>
+      </div>
+    `,
+  });
+}
+
+function stableJitterFromId(id: string): { jitterLat: number; jitterLng: number } {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  }
+
+  const latSeed = Math.sin(hash) * 10000;
+  const lngSeed = Math.sin(hash * 1.37) * 10000;
+  const normalize = (seed: number) => seed - Math.floor(seed);
+
+  return {
+    jitterLat: (normalize(latSeed) - 0.5) * 0.08,
+    jitterLng: (normalize(lngSeed) - 0.5) * 0.08,
+  };
+}
 
 function createMarkerIcon(color: string, isSelected: boolean): L.DivIcon {
   const size = isSelected ? 48 : 36;
@@ -53,16 +88,28 @@ function createMarkerIcon(color: string, isSelected: boolean): L.DivIcon {
   });
 }
 
-const FlyToSelected: React.FC<{ mix: MusicMix | null }> = ({ mix }) => {
+const FlyToSelected: React.FC<{
+  mix: MusicMix | null;
+  leftInset: number;
+  rightInset: number;
+  topInset: number;
+  bottomInset: number;
+}> = ({ mix, leftInset, rightInset, topInset, bottomInset }) => {
   const map = useMap();
   React.useEffect(() => {
     if (mix) {
-      map.flyTo([mix.coordinates.lat, mix.coordinates.lng], 5, {
+      const targetZoom = 5;
+      const point = map.project([mix.coordinates.lat, mix.coordinates.lng], targetZoom);
+      const offsetX = (leftInset - rightInset) / 2;
+      const offsetY = (topInset - bottomInset) / 2;
+      const center = map.unproject(point.subtract([offsetX, offsetY]), targetZoom);
+
+      map.flyTo(center, targetZoom, {
         duration: 1.2,
         easeLinearity: 0.25,
       });
     }
-  }, [mix, map]);
+  }, [bottomInset, leftInset, mix, rightInset, topInset, map]);
   return null;
 };
 
@@ -198,25 +245,37 @@ const MixMarkerComponent: React.FC<{
 
 MixMarkerComponent.displayName = 'MixMarker';
 
-export const WorldMap: React.FC<WorldMapProps> = ({ mixes, onSelect, onPlay, selectedId, playingId, className }) => {
+export const WorldMap: React.FC<WorldMapProps> = ({
+  mixes,
+  onSelect,
+  onPlay,
+  selectedId,
+  playingId,
+  className,
+  leftInset = 24,
+  rightInset = 24,
+  topInset = 24,
+  bottomInset = 24,
+  showLegend = true,
+  zoomPosition = 'bottomright',
+}) => {
   const flyToMix = useMemo(
     () => mixes.find(m => m.id === selectedId || m.id === playingId) ?? null,
     [mixes, selectedId, playingId]
   );
 
-  // Add random jitter to coordinates so pins don't overlap exactly
+  // Añadir jitter determinístico para evitar saltos visuales entre renders.
   const mixesWithJitter = useMemo(() => {
     return mixes.map(mix => {
       if (mix.jitterLat !== undefined && mix.jitterLng !== undefined) return mix;
-      // Add a small random offset (roughly ~1-5km depending on latitude)
-      const jitterLat = (Math.random() - 0.5) * 0.08;
-      const jitterLng = (Math.random() - 0.5) * 0.08;
+      const { jitterLat, jitterLng } = stableJitterFromId(mix.id);
       return { ...mix, jitterLat, jitterLng };
     });
   }, [mixes]);
 
   return (
     <div className={className || "map-container-wrapper"}>
+      <div className="map-atmosphere pointer-events-none" />
       <MapContainer
         center={[20, 0]}
         zoom={2}
@@ -229,7 +288,7 @@ export const WorldMap: React.FC<WorldMapProps> = ({ mixes, onSelect, onPlay, sel
         attributionControl={true}
         zoomControl={false}
       >
-        <ZoomControl position="bottomright" />
+        <ZoomControl position={zoomPosition} />
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
@@ -238,11 +297,18 @@ export const WorldMap: React.FC<WorldMapProps> = ({ mixes, onSelect, onPlay, sel
           noWrap={true}
           bounds={[[-90, -180], [90, 180]]}
         />
-        <FlyToSelected mix={flyToMix} />
+        <FlyToSelected
+          mix={flyToMix}
+          leftInset={leftInset}
+          rightInset={rightInset}
+          topInset={topInset}
+          bottomInset={bottomInset}
+        />
         <MarkerClusterGroup
           chunkedLoading
           maxClusterRadius={40}
           spiderfyOnMaxZoom={true}
+          iconCreateFunction={(cluster: any) => createClusterIcon(cluster.getChildCount())}
         >
           {mixesWithJitter.map(mix => (
             <MixMarkerComponent
@@ -256,6 +322,27 @@ export const WorldMap: React.FC<WorldMapProps> = ({ mixes, onSelect, onPlay, sel
           ))}
         </MarkerClusterGroup>
       </MapContainer>
+      {showLegend && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[6] hidden justify-center px-4 pt-[calc(var(--safe-top)+1.25rem)] lg:flex">
+          <div className="map-legend">
+            <div className="map-legend__title">Continentes</div>
+            <div className="map-legend__items">
+              {CONTINENT_OPTIONS.filter((option) => option.value).map((option) => {
+                const continentStyle = getContinentStyle(option.value);
+                return (
+                  <div key={option.value} className="map-legend__item">
+                    <span
+                      className="map-legend__dot"
+                      style={{ backgroundColor: continentStyle.markerColor }}
+                    />
+                    <span>{option.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

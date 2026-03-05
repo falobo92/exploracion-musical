@@ -1,8 +1,40 @@
 import type { GoogleTokenResponse } from "@/types";
+import { normalizeForCompare } from "@/lib/text";
 
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 const SEARCH_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 2;
+const SEARCH_MAX_RESULTS = 12;
+const SHORT_FORM_MAX_SECONDS = 65;
+const STANDARD_TRACK_MAX_SECONDS = 11 * 60;
+const WEAK_MATCH_SCORE = 18;
+
+interface SearchAuth {
+  apiKey?: string;
+  token?: string;
+}
+
+interface YouTubeSearchItem {
+  id?: { videoId?: string } | string;
+  snippet?: {
+    title?: string;
+    channelTitle?: string;
+    publishedAt?: string;
+    liveBroadcastContent?: string;
+    categoryId?: string;
+  };
+  contentDetails?: {
+    duration?: string;
+  };
+  statistics?: {
+    viewCount?: string;
+  };
+}
+
+function getVideoId(item: YouTubeSearchItem): string | null {
+  if (typeof item.id === "string") return item.id;
+  return item.id?.videoId ?? null;
+}
 
 // --------------- Circuit breaker ---------------
 let quotaExhausted = false;
@@ -112,6 +144,283 @@ function isRetryable(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+function tokenize(value: string): string[] {
+  return normalizeForCompare(value)
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 1);
+}
+
+function overlapScore(sourceTokens: string[], candidateTokens: string[], weight: number): number {
+  if (sourceTokens.length === 0 || candidateTokens.length === 0) return 0;
+  const candidateSet = new Set(candidateTokens);
+  const matches = sourceTokens.filter((token) => candidateSet.has(token)).length;
+  return Math.round((matches / sourceTokens.length) * weight);
+}
+
+function splitQuery(query: string): { artistPart: string; titlePart: string } {
+  const [artistPart = "", ...titleParts] = query.split(" - ");
+  return {
+    artistPart: artistPart.trim(),
+    titlePart: titleParts.join(" - ").trim(),
+  };
+}
+
+function includesAny(value: string, terms: string[]): boolean {
+  return terms.some((term) => value.includes(term));
+}
+
+function parseIsoDurationToSeconds(duration?: string): number | null {
+  if (!duration) return null;
+  const match = duration.match(
+    /^P(?:([0-9]+)D)?T?(?:([0-9]+)H)?(?:([0-9]+)M)?(?:([0-9]+)S)?$/i,
+  );
+  if (!match) return null;
+
+  const [, days = "0", hours = "0", minutes = "0", seconds = "0"] = match;
+  return (
+    Number(days) * 24 * 60 * 60
+    + Number(hours) * 60 * 60
+    + Number(minutes) * 60
+    + Number(seconds)
+  );
+}
+
+function buildSearchUrl(query: string, auth: SearchAuth): string {
+  const params = new URLSearchParams({
+    part: "id,snippet",
+    q: query,
+    maxResults: String(SEARCH_MAX_RESULTS),
+    type: "video",
+    videoEmbeddable: "true",
+    videoDuration: "medium",
+    safeSearch: "none",
+  });
+
+  if (auth.apiKey) {
+    params.set("key", auth.apiKey);
+  }
+
+  return `${YOUTUBE_API_BASE}/search?${params.toString()}`;
+}
+
+function buildVideosUrl(videoIds: string[], auth: SearchAuth): string {
+  const params = new URLSearchParams({
+    part: "snippet,contentDetails,statistics",
+    id: videoIds.join(","),
+    maxResults: String(videoIds.length),
+  });
+
+  if (auth.apiKey) {
+    params.set("key", auth.apiKey);
+  }
+
+  return `${YOUTUBE_API_BASE}/videos?${params.toString()}`;
+}
+
+async function enrichSearchItems(
+  items: YouTubeSearchItem[],
+  auth: SearchAuth,
+  headers?: Record<string, string>,
+): Promise<YouTubeSearchItem[]> {
+  const videoIds = items
+    .map(getVideoId)
+    .filter((videoId): videoId is string => Boolean(videoId));
+
+  if (videoIds.length === 0 || (!auth.apiKey && !auth.token)) {
+    return items;
+  }
+
+  try {
+    const response = await fetchWithTimeout(buildVideosUrl(videoIds, auth), { headers });
+    if (!response.ok) return items;
+
+    const data = await response.json();
+    const byId = new Map<string, YouTubeSearchItem>(
+      (data.items ?? [])
+        .map((item: YouTubeSearchItem) => [getVideoId(item), item] as const)
+        .filter(
+          (entry: readonly [string | null, YouTubeSearchItem]): entry is readonly [string, YouTubeSearchItem] =>
+            Boolean(entry[0]),
+        ),
+    );
+
+    return items.map((item) => {
+      const videoId = getVideoId(item);
+      if (!videoId) return item;
+      const enriched = byId.get(videoId);
+      if (!enriched) return item;
+
+      return {
+        ...item,
+        snippet: {
+          ...item.snippet,
+          ...enriched.snippet,
+        },
+        contentDetails: enriched.contentDetails ?? item.contentDetails,
+        statistics: enriched.statistics ?? item.statistics,
+      };
+    });
+  } catch {
+    return items;
+  }
+}
+
+function scoreCandidate(item: YouTubeSearchItem, index: number, query: string): number {
+  const title = item.snippet?.title ?? "";
+  const channelTitle = item.snippet?.channelTitle ?? "";
+  const normalizedQuery = normalizeForCompare(query);
+  const normalizedTitle = normalizeForCompare(title);
+  const normalizedChannelTitle = normalizeForCompare(channelTitle);
+  const queryTokens = tokenize(query);
+  const { artistPart, titlePart } = splitQuery(query);
+  const artistTokens = tokenize(artistPart);
+  const titleTokens = tokenize(titlePart);
+  const candidateTokens = [...tokenize(title), ...tokenize(channelTitle)];
+  const durationSeconds = parseIsoDurationToSeconds(item.contentDetails?.duration);
+  const viewCount = Number(item.statistics?.viewCount ?? 0);
+  const publishedAtMs = item.snippet?.publishedAt ? Date.parse(item.snippet.publishedAt) : NaN;
+  const ageDays = Number.isNaN(publishedAtMs)
+    ? null
+    : Math.max(0, Math.round((Date.now() - publishedAtMs) / (1000 * 60 * 60 * 24)));
+  const liveBroadcast = normalizeForCompare(item.snippet?.liveBroadcastContent ?? "");
+
+  const isCoverRequested = normalizedQuery.includes("cover");
+  const isRemixRequested = normalizedQuery.includes("remix");
+  const isLiveRequested = normalizedQuery.includes("live") || normalizedQuery.includes("vivo");
+  const isLyricRequested = normalizedQuery.includes("lyrics") || normalizedQuery.includes("letra");
+  const isInstrumentalRequested = normalizedQuery.includes("instrumental");
+  const allowLongForm = includesAny(normalizedQuery, [
+    "mix",
+    "session",
+    "set",
+    "dj",
+    "radio",
+    "live",
+    "boiler room",
+    "full album",
+    "album completo",
+  ]);
+
+  const strongPenaltyTerms = [
+    "karaoke",
+    "reaction",
+    "review",
+    "tutorial",
+    "teaser",
+    "preview",
+    "shorts",
+    "fan made",
+    "challenge",
+    "meme",
+    "viral",
+    "status",
+    "capcut",
+    "tiktok",
+    "edit",
+    "clip",
+  ];
+  const mediumPenaltyTerms = [
+    "lyric",
+    "lyrics",
+    "audio",
+    "visualizer",
+    "slowed",
+    "sped up",
+    "reverb",
+    "nightcore",
+    "8d",
+    "bass boosted",
+    "full album",
+    "album completo",
+    "trending",
+    "compilation",
+  ];
+
+  let score = Math.max(0, SEARCH_MAX_RESULTS - index) * 1.25;
+
+  if (
+    normalizedChannelTitle.includes("topic")
+    || normalizedChannelTitle.includes("official")
+    || normalizedChannelTitle.includes("vevo")
+    || normalizedChannelTitle.includes("records")
+  ) {
+    score += 7;
+  }
+
+  if (item.snippet?.categoryId === "10") {
+    score += 6;
+  }
+
+  if (artistTokens.length > 0) {
+    score += overlapScore(artistTokens, candidateTokens, 20);
+    if (normalizedTitle.includes(normalizeForCompare(artistPart))) score += 5;
+  }
+
+  if (titleTokens.length > 0) {
+    score += overlapScore(titleTokens, candidateTokens, 28);
+    if (normalizedTitle.includes(normalizeForCompare(titlePart))) score += 8;
+  } else {
+    score += overlapScore(queryTokens, candidateTokens, 18);
+  }
+
+  if (artistTokens.length > 0 && titleTokens.length > 0) {
+    const exactArtist = normalizedTitle.includes(normalizeForCompare(artistPart));
+    const exactTitle = normalizedTitle.includes(normalizeForCompare(titlePart));
+    if (exactArtist && exactTitle) score += 12;
+  }
+
+  if (includesAny(normalizedTitle, strongPenaltyTerms) || includesAny(normalizedChannelTitle, strongPenaltyTerms)) {
+    score -= 18;
+  }
+  if (includesAny(normalizedTitle, mediumPenaltyTerms) || includesAny(normalizedChannelTitle, mediumPenaltyTerms)) {
+    score -= 9;
+  }
+
+  if (!isInstrumentalRequested && normalizedTitle.includes("instrumental")) score -= 12;
+  if (!isLyricRequested && (normalizedTitle.includes("lyric") || normalizedTitle.includes("lyrics"))) score -= 9;
+  if (!isCoverRequested && normalizedTitle.includes("cover")) score -= 16;
+  if (!isRemixRequested && normalizedTitle.includes("remix")) score -= 12;
+  if (!isLiveRequested && (normalizedTitle.includes("live") || normalizedTitle.includes("en vivo"))) score -= 12;
+
+  if (durationSeconds !== null) {
+    if (!allowLongForm && durationSeconds < SHORT_FORM_MAX_SECONDS) {
+      score -= 28;
+    }
+    if (!allowLongForm && durationSeconds > STANDARD_TRACK_MAX_SECONDS) {
+      score -= 12;
+    }
+    if (allowLongForm && durationSeconds >= 5 * 60) {
+      score += 6;
+    }
+  }
+
+  if (liveBroadcast && liveBroadcast !== "none" && !isLiveRequested) {
+    score -= 14;
+  }
+
+  if (artistTokens.length > 0 && overlapScore(artistTokens, candidateTokens, 100) === 0) {
+    score -= 14;
+  }
+
+  if (titleTokens.length > 0 && overlapScore(titleTokens, candidateTokens, 100) < 30) {
+    score -= 12;
+  }
+
+  if (
+    ageDays !== null
+    && ageDays < 120
+    && viewCount > 5_000_000
+    && (
+      includesAny(normalizedTitle, ["viral", "challenge", "meme", "edit", "tiktok", "clip"])
+      || includesAny(normalizedChannelTitle, ["shorts", "clips"])
+    )
+  ) {
+    score -= 12;
+  }
+
+  return score;
+}
+
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
@@ -152,7 +461,7 @@ let tokenExpiryTime: number = 0;
  */
 export async function searchVideo(
   query: string,
-  auth: { apiKey?: string; token?: string },
+  auth: SearchAuth,
 ): Promise<string | null> {
   if (quotaExhausted) {
     console.warn("[YouTube] Cuota agotada, saltando búsqueda.");
@@ -186,7 +495,7 @@ export async function searchVideo(
         url = `/api/youtube-search?q=${encodeURIComponent(finalQuery)}`;
         headers = undefined;
       } else {
-        url = `${YOUTUBE_API_BASE}/search?part=id,snippet&q=${encodeURIComponent(finalQuery)}&maxResults=5&type=video&videoEmbeddable=true${useApiKey ? `&key=${auth.apiKey}` : ""}`;
+        url = buildSearchUrl(finalQuery, auth);
         headers = useToken ? { Authorization: `Bearer ${auth.token}` } : undefined;
       }
 
@@ -229,7 +538,7 @@ export async function searchVideo(
         if (isRetryable(response.status)) {
           throw new YouTubeError(
             `Error ${response.status}: ${errorData?.error?.message ?? "error del servidor"}`,
-            "QUOTA",
+            "NETWORK",
             response.status,
           );
         }
@@ -239,67 +548,22 @@ export async function searchVideo(
       }
 
       const data = await response.json();
-      const items = data.items ?? [];
+      const baseItems: YouTubeSearchItem[] = data.items ?? [];
+      const items = useProxy
+        ? baseItems
+        : await enrichSearchItems(baseItems, auth, headers);
 
-      // Confiar principalmente en el algoritmo de YouTube, que es muy preciso
-      // Pero aplicamos filtros para evitar covers, directos o karaokes si no se piden
       let bestId: string | null = null;
       let bestScore = -100;
 
-      const firstResultId = items[0]?.id?.videoId ?? null;
-      const lowerQuery = query.toLowerCase();
-      const isCoverRequested = lowerQuery.includes("cover");
-      const isRemixRequested = lowerQuery.includes("remix");
-      const isLiveRequested = lowerQuery.includes("live") || lowerQuery.includes("vivo");
+      const firstResultId = items[0] ? getVideoId(items[0]) : null;
 
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        const videoId = item.id?.videoId;
+        const videoId = getVideoId(item);
         if (!videoId) continue;
 
-        const title = (item.snippet?.title ?? "").toLowerCase();
-        const channelTitle = (item.snippet?.channelTitle ?? "").toLowerCase();
-
-        // Base score: damos mucho peso a la posición en la que YouTube devuelve el video
-        // El #1 recibe +10, el #2 +8, etc.
-        let score = (5 - i) * 2;
-
-        // Bonus si el canal es oficial o "Topic" (canales generados por YT Music)
-        if (
-          channelTitle.includes("topic") ||
-          channelTitle.includes("official") ||
-          channelTitle.includes("vevo")
-        ) {
-          score += 5;
-        }
-
-        // Penalizaciones drásticas por contenido no deseado
-        const penalties = [
-          { term: "karaoke", weight: 15 },
-          { term: "instrumental", weight: 10 },
-          { term: "reaction", weight: 15 },
-          { term: "review", weight: 15 },
-          { term: "tutorial", weight: 15 },
-          { term: "8d audio", weight: 10 },
-          { term: "bass boosted", weight: 8 },
-          { term: "slowed", weight: 8 },
-          { term: "reverb", weight: 8 },
-          { term: "teaser", weight: 10 },
-          { term: "preview", weight: 10 },
-        ];
-
-        for (const { term, weight } of penalties) {
-          if (title.includes(term)) score -= weight;
-        }
-
-        if (!isCoverRequested && title.includes("cover")) score -= 15;
-        if (!isRemixRequested && title.includes("remix")) score -= 5;
-        if (!isLiveRequested && (title.includes("live") || title.includes("en vivo"))) score -= 5;
-
-        // Penalizar álbumes completos (las búsquedas de música suelen ser de 1 canción)
-        if (title.includes("full album") || title.includes("álbum completo")) {
-          score -= 10;
-        }
+        const score = scoreCandidate(item, i, query);
 
         if (score > bestScore) {
           bestScore = score;
@@ -312,9 +576,12 @@ export async function searchVideo(
         bestId = firstResultId;
       }
 
-      if (bestId) {
+      if (bestId && bestScore >= WEAK_MATCH_SCORE) {
         searchCache.set(cacheKey, { videoId: bestId, ts: Date.now() });
         persistCacheDebounced(searchCache);
+      } else if (bestId) {
+        searchCache.delete(cacheKey);
+        failTTL.delete(cacheKey);
       } else {
         searchCache.set(cacheKey, null);
         failTTL.set(cacheKey, Date.now() + FAIL_TTL_MS);
@@ -349,7 +616,7 @@ export async function searchVideoWithToken(
  */
 export async function batchSearchVideos(
   queries: { index: number; query: string }[],
-  apiKey: string,
+  auth: SearchAuth,
   concurrency = 3,
 ): Promise<Map<number, string>> {
   const results = new Map<number, string>();
@@ -359,7 +626,7 @@ export async function batchSearchVideos(
     while (queue.length > 0 && !quotaExhausted) {
       const item = queue.shift()!;
       try {
-        const videoId = await searchVideoWithApiKey(item.query, apiKey);
+        const videoId = await searchVideo(item.query, auth);
         if (videoId) results.set(item.index, videoId);
       } catch {
         if (quotaExhausted) break;

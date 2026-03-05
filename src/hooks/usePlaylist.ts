@@ -10,7 +10,7 @@ import {
 } from '@/services/youtube';
 
 interface UsePlaylistOptions {
-  mixes: MusicMix[];
+  visibleMixes: MusicMix[];
 
   googleClientId: string;
   setMixes: (updater: (prev: MusicMix[]) => MusicMix[]) => void;
@@ -20,7 +20,7 @@ interface UsePlaylistOptions {
 }
 
 export function usePlaylist({
-  mixes,
+  visibleMixes,
 
   googleClientId,
   setMixes,
@@ -37,7 +37,7 @@ export function usePlaylist({
       return;
     }
 
-    if (mixes.length === 0) {
+    if (visibleMixes.length === 0) {
       notify('No hay mixes para guardar.', 'error');
       return;
     }
@@ -48,21 +48,32 @@ export function usePlaylist({
     try {
       const accessToken = await getGoogleAccessToken(googleClientId);
 
-      const updatedMixes = [...mixes];
-      for (let i = 0; i < updatedMixes.length; i++) {
-        if (!updatedMixes[i].videoId) {
+      const resolvedVideoIds = new Map<string, string>();
+      const selectedMixes = visibleMixes.map((mix) => ({ ...mix }));
+
+      for (let i = 0; i < selectedMixes.length; i++) {
+        if (!selectedMixes[i].videoId) {
           if (isQuotaExhausted()) break;
-          update(toastId, `Buscando videos... (${i + 1}/${updatedMixes.length})`, 'loading');
-          const foundId = await searchVideoWithToken(updatedMixes[i].searchQuery, accessToken);
+          update(toastId, `Buscando videos... (${i + 1}/${selectedMixes.length})`, 'loading');
+          const foundId = await searchVideoWithToken(selectedMixes[i].searchQuery, accessToken);
           if (foundId) {
-            updatedMixes[i] = { ...updatedMixes[i], videoId: foundId };
+            selectedMixes[i] = { ...selectedMixes[i], videoId: foundId };
+            resolvedVideoIds.set(selectedMixes[i].id, foundId);
           }
           await new Promise(r => setTimeout(r, 150));
         }
       }
-      setMixes(() => updatedMixes);
 
-      const mixesWithVideo = updatedMixes.filter(m => m.videoId);
+      if (resolvedVideoIds.size > 0) {
+        setMixes((prev) =>
+          prev.map((mix) => {
+            const videoId = resolvedVideoIds.get(mix.id);
+            return videoId ? { ...mix, videoId } : mix;
+          }),
+        );
+      }
+
+      const mixesWithVideo = selectedMixes.filter(m => m.videoId);
       if (mixesWithVideo.length === 0) {
         update(toastId, 'No se encontraron videos para la playlist.', 'error');
         return;
@@ -93,7 +104,7 @@ export function usePlaylist({
     } finally {
       setIsSaving(false);
     }
-  }, [mixes, googleClientId, setMixes, notify, update, openSettings]);
+  }, [visibleMixes, googleClientId, setMixes, notify, update, openSettings]);
 
   return { isSaving, save };
 }

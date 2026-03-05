@@ -73,6 +73,7 @@ export function useMixes() {
         update: (id: string, msg: string, type?: 'info' | 'success' | 'error' | 'loading', duration?: number) => void;
         openSettings: () => void;
         onReset: () => void;
+        onGenerated?: (mixes: MusicMix[]) => void;
       }
     ) => {
       if (!geminiKey) {
@@ -89,6 +90,7 @@ export function useMixes() {
       try {
         const newMixes = await generateStrangeMixes(geminiKey, criteria);
         setMixes(newMixes);
+        options.onGenerated?.(newMixes);
         options.update(toastId, `${newMixes.length} descubrimientos generados`, 'success');
       } catch (error) {
         console.error(error);

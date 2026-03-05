@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import type { MusicMix } from '@/types';
+import type { MusicMix, PlaybackStatus } from '@/types';
 import { getContinentStyle } from '@/constants/continents';
 import { getAudioUrl, clearAudioCache } from '@/services/audioProxy';
 
@@ -15,8 +15,11 @@ interface PlayerBarProps {
   onVideoEnd: () => void;
   currentIndex: number;
   totalTracks: number;
+  nextMix: MusicMix | null;
   shuffle: boolean;
   onToggleShuffle: () => void;
+  playbackStatus: PlaybackStatus;
+  onPlaybackStateChange: (status: PlaybackStatus) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -38,8 +41,11 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   onVideoEnd,
   currentIndex,
   totalTracks,
+  nextMix,
   shuffle,
   onToggleShuffle,
+  playbackStatus,
+  onPlaybackStateChange,
 }) => {
   // === Refs ===
   const playerRef = useRef<any>(null);
@@ -60,10 +66,33 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [audioFailed, setAudioFailed] = useState(false);
   const [audioRetryToken, setAudioRetryToken] = useState(0);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const audioRetryCountRef = useRef(0);
 
   // === Derived: ¿usar audio nativo o YouTube iframe? ===
   const useNativeAudio = !!audioSrc && !audioFailed;
+  const isResolving = playbackStatus === 'resolving';
+  const isBuffering = playbackStatus === 'buffering';
+  const hasPlaybackError = playbackStatus === 'error';
+  const statusLabel = isResolving
+    ? 'Buscando fuente'
+    : isBuffering
+      ? 'Cargando audio'
+      : hasPlaybackError
+        ? 'Error de carga'
+        : isPlaying
+          ? 'Sonando'
+          : 'En pausa';
+  const sourceLabel = isResolving || isBuffering
+    ? 'Preparando'
+    : useNativeAudio
+      ? 'Audio directo'
+      : videoId
+        ? 'Fallback YouTube'
+        : 'Sin fuente';
+  const nextTrackLabel = nextMix
+    ? `${nextMix.artist}${nextMix.songTitle ? ` · ${nextMix.songTitle}` : ''}`
+    : 'Fin de la cola';
 
   // === Ref syncing ===
   useEffect(() => { onVideoEndRef.current = onVideoEnd; }, [onVideoEnd]);
@@ -132,8 +161,16 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     const dur = audioRef.current.duration;
     if (dur && !isNaN(dur)) setDuration(dur);
     audioRef.current.volume = volume / 100;
-    if (isPlayingRef.current) audioRef.current.play().catch(() => {});
-  }, [volume]);
+    if (isPlayingRef.current) {
+      onPlaybackStateChange('buffering');
+      audioRef.current.play().catch(() => {
+        setAudioFailed(true);
+        onPlaybackStateChange('error');
+      });
+    } else {
+      onPlaybackStateChange('paused');
+    }
+  }, [onPlaybackStateChange, volume]);
 
   // Audio element: actualizar progreso
   const handleAudioTimeUpdate = useCallback(() => {
@@ -202,12 +239,20 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
               const dur = playerRef.current?.getDuration?.() || 0;
               if (dur > 0) setDuration(dur);
               if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+              onPlaybackStateChange('playing');
             }
             if (event.data === window.YT.PlayerState.PAUSED) {
               if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+              onPlaybackStateChange('paused');
+            }
+            if (event.data === window.YT.PlayerState.BUFFERING) {
+              onPlaybackStateChange('buffering');
             }
           },
-          onError: () => { setTimeout(() => onVideoEndRef.current(), 1000); },
+          onError: () => {
+            onPlaybackStateChange('error');
+            setTimeout(() => onVideoEndRef.current(), 1000);
+          },
         },
       });
     };
@@ -233,19 +278,29 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     if (audioFailed && !useNativeAudio) {
       console.log(`[Player] Cargando video en YT IFrame: ${videoId}`);
       try {
-        playerRef.current.cueVideoById(videoId);
+        if (isPlayingRef.current) {
+          playerRef.current.loadVideoById(videoId);
+        } else {
+          playerRef.current.cueVideoById(videoId);
+        }
         if (isPlaying) {
+          onPlaybackStateChange('buffering');
           setTimeout(() => {
             if (playerRef.current && isPlayingRef.current) {
               playerRef.current.playVideo();
             }
           }, 300);
+          setTimeout(() => {
+            if (playerRef.current && isPlayingRef.current) {
+              playerRef.current.playVideo();
+            }
+          }, 900);
         }
       } catch (e) {
         console.error('[Player] Error cargando video YT:', e);
       }
     }
-  }, [videoId, playerReady, audioFailed, useNativeAudio]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [videoId, playerReady, audioFailed, useNativeAudio, isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====================================================================
   // CONTROLES UNIFICADOS: Play/Pause, Seek, Volume
@@ -255,13 +310,23 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   useEffect(() => {
     if (useNativeAudio) {
       if (!audioRef.current) return;
-      if (isPlaying) audioRef.current.play().catch(() => {});
-      else audioRef.current.pause();
+      if (isPlaying) {
+        onPlaybackStateChange('buffering');
+        audioRef.current.play().catch(() => {
+          setAudioFailed(true);
+          onPlaybackStateChange('error');
+        });
+      }
+      else {
+        audioRef.current.pause();
+        onPlaybackStateChange('paused');
+      }
     } else if (playerReady && playerRef.current && audioFailed) {
       try {
         const state = playerRef.current.getPlayerState?.();
         if (isPlaying) {
           if (state !== window.YT.PlayerState.PLAYING) {
+            onPlaybackStateChange('buffering');
             playerRef.current.playVideo();
           }
         } else {
@@ -273,7 +338,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         console.warn('[Player] Error enviando comando play/pause a YT:', e);
       }
     }
-  }, [isPlaying, playerReady, useNativeAudio, audioFailed]);
+  }, [audioFailed, isPlaying, onPlaybackStateChange, playerReady, useNativeAudio]);
 
   // Media Session API — controles en lock screen / notificaciones
   useEffect(() => {
@@ -425,6 +490,11 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [useNativeAudio]);
 
+  useEffect(() => {
+    setShowVideo(false);
+    setIsDetailsOpen(false);
+  }, [currentMix?.id]);
+
   // ====================================================================
   // HANDLERS
   // ====================================================================
@@ -457,6 +527,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   const isVisible = !!currentMix;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const accentColor = currentMix ? getContinentStyle(currentMix.continent).markerColor : '#10b981';
+  const trackPositionLabel = `${Math.max(currentIndex + 1, 1)}/${Math.max(totalTracks, 1)}`;
 
   return (
     <>
@@ -465,6 +536,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         ref={audioRef}
         src={audioSrc || undefined}
         preload="auto"
+        autoPlay={isPlaying}
         playsInline
         onTimeUpdate={handleAudioTimeUpdate}
         onLoadedMetadata={handleAudioLoaded}
@@ -472,10 +544,12 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         onError={handleAudioError}
         onPlay={() => {
           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+          onPlaybackStateChange('playing');
           if (!isPlayingRef.current) onPlay();
         }}
         onPause={() => {
           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+          onPlaybackStateChange('paused');
           if (isPlayingRef.current) onPause();
         }}
       />
@@ -484,220 +558,313 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
       <div className={`w-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] origin-bottom ${
         isVisible ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-12 opacity-0 scale-95 pointer-events-none'
       }`}>
-        <div className="bg-zinc-950/90 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl shadow-black/80">
+        <div className="mx-auto w-full max-w-[1180px] rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(9,9,11,0.92),rgba(9,9,11,0.985))] shadow-2xl shadow-black/80 backdrop-blur-2xl">
           {/* Top progress bar */}
-          <div className="h-1 bg-white/5 cursor-pointer group hover:h-1.5 transition-all relative z-10" onClick={handleSeek}>
+          <div className="relative z-10 h-1 cursor-pointer bg-white/5 transition-all group hover:h-1.5" onClick={handleSeek}>
             <div
-              className="h-full relative transition-all duration-200 progress-glow"
+              className="progress-glow relative h-full transition-all duration-200"
               style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}, #14b8a6)` }}
             >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform" />
+              <div className="absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow-lg transition-transform scale-100 group-hover:scale-110" />
             </div>
           </div>
 
-          <div className="px-4 py-3 sm:py-3.5 w-full">
-            <div className="flex items-center gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
-
-              {/* YouTube iframe (fallback) — siempre oculto cuando audio nativo está activo, y opcional cuando no */}
-              <div
-                id="yt-player-wrapper"
-                className={
-                  useNativeAudio || !showVideo
-                    ? 'fixed -left-[9999px] -top-[9999px] w-[320px] h-[180px] overflow-hidden pointer-events-none'
-                    : 'fixed bottom-[140px] right-4 sm:bottom-[100px] sm:right-6 z-40 w-[280px] h-[158px] sm:w-[320px] sm:h-[180px] rounded-xl overflow-hidden shadow-2xl shadow-black/50 border border-zinc-700/50 transition-all duration-300'
-                }
+          <div
+            id="yt-player-wrapper"
+            className={
+              useNativeAudio || !showVideo
+                ? 'fixed -left-[9999px] -top-[9999px] h-[180px] w-[320px] overflow-hidden pointer-events-none'
+                : 'fixed left-3 right-3 top-[calc(var(--safe-top)+1rem)] z-[55] h-[200px] overflow-hidden rounded-2xl border border-zinc-700/60 shadow-2xl shadow-black/50 sm:left-auto sm:right-6 sm:top-auto sm:bottom-[calc(var(--safe-bottom)+8.5rem)] sm:h-[180px] sm:w-[320px]'
+            }
+          >
+            <div className="relative h-full w-full bg-black">
+              <div id="yt-player-element" className="h-full w-full" />
+              <button
+                onClick={() => setShowVideo(false)}
+                aria-label="Cerrar video flotante"
+                title="Cerrar video"
+                className="absolute right-2 top-2 z-10 rounded-full bg-black/60 p-1 text-white transition-colors hover:bg-black/80"
               >
-                <div className="relative w-full h-full bg-black">
-                    <div id="yt-player-element" className="w-full h-full" />
-                    {/* Botón para cerrar video flotante */}
-                    <button 
-                        onClick={() => setShowVideo(false)}
-                        className="absolute top-2 right-2 p-1 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors z-10"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
-                </div>
-              </div>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
 
-              {/* Thumbnail desktop — visible siempre que el video flotante NO esté activo */}
-              {(!showVideo || useNativeAudio) && (
-                <div className="hidden sm:block shrink-0 group relative">
-                  <div className="w-[120px] h-[120px] rounded-lg overflow-hidden bg-zinc-800 relative shadow-lg shadow-black/30 border border-zinc-800/30">
-                    {videoId ? (
-                      <img
-                        src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`}
-                        alt=""
-                        className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <svg className="w-8 h-8 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                        </svg>
-                      </div>
-                    )}
-                    {isPlaying && (
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
-                        <div className="flex gap-[3px] items-end h-5">
-                          <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
-                          <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
-                          <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.4s', '--eq-delay': '0.2s' } as React.CSSProperties} />
-                          <div className="w-[3px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.6s', '--eq-delay': '0.15s' } as React.CSSProperties} />
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Botón para ver video (solo si no es audio nativo y tenemos videoId) */}
-                    {!useNativeAudio && videoId && (
-                        <button 
-                            onClick={() => setShowVideo(true)}
-                            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                            title="Ver video"
-                        >
-                            <svg className="w-8 h-8 text-white drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                        </button>
-                    )}
+          <div className="w-full px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
+            <div className="flex items-start gap-3 sm:gap-4 lg:gap-5">
+              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-zinc-800 shadow-md sm:h-20 sm:w-20">
+                {videoId ? (
+                  <img
+                    src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <svg className="h-6 w-6 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Thumbnail / Album art en mobile */}
-              <div className="sm:hidden shrink-0">
-                {currentMix && (
-                  <div className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-800 relative">
-                    {currentMix.videoId ? (
-                      <img src={`https://img.youtube.com/vi/${currentMix.videoId}/default.jpg`} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <svg className="w-5 h-5 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                        </svg>
-                      </div>
-                    )}
-                    {isPlaying && (
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                        <div className="flex gap-[2px] items-end h-3">
-                          <div className="w-[2px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
-                          <div className="w-[2px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
-                          <div className="w-[2px] bg-white rounded-full eq-bar" style={{ '--eq-duration': '0.4s', '--eq-delay': '0.2s' } as React.CSSProperties} />
-                        </div>
-                      </div>
-                    )}
+                {isPlaying && !isResolving && !isBuffering && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                    <div className="flex h-4 items-end gap-[2px]">
+                      <div className="w-[2px] rounded-full bg-white eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
+                      <div className="w-[2px] rounded-full bg-white eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
+                      <div className="w-[2px] rounded-full bg-white eq-bar" style={{ '--eq-duration': '0.45s', '--eq-delay': '0.2s' } as React.CSSProperties} />
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* Track info */}
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 {currentMix && (
                   <>
-                    <div className="flex items-center gap-2 mb-0.5 sm:mb-1">
-                      <div className="hidden sm:block w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{ background: accentColor, boxShadow: `0 0 6px ${accentColor}` }} />
-                      <h4 className="text-white font-semibold truncate text-[13px] sm:text-sm">{currentMix.artist}</h4>
-                      {isPlaying && (
-                        <div className="hidden sm:flex gap-[2px] items-end h-3 shrink-0">
-                          <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.5s', '--eq-delay': '0s' } as React.CSSProperties} />
-                          <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.7s', '--eq-delay': '0.1s' } as React.CSSProperties} />
-                          <div className="w-[2px] bg-emerald-400 rounded-full eq-bar" style={{ '--eq-duration': '0.4s', '--eq-delay': '0.2s' } as React.CSSProperties} />
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="hidden h-1.5 w-1.5 rounded-full sm:block"
+                            style={{ background: accentColor, boxShadow: `0 0 6px ${accentColor}` }}
+                          />
+                          <h4 className="truncate text-[13px] font-semibold text-white sm:text-base">
+                            {currentMix.artist}
+                          </h4>
                         </div>
-                      )}
-                      <span className="text-zinc-600 text-[10px] font-mono shrink-0 ml-auto tabular-nums">
-                        {currentIndex + 1}/{totalTracks}
+                        <p className="mt-1 truncate text-[11px] text-zinc-400 sm:text-sm">
+                          {currentMix.songTitle || `${currentMix.style} · ${currentMix.country}`}
+                        </p>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="rounded-full border border-white/8 bg-white/5 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-400">
+                          {trackPositionLabel}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsDetailsOpen((prev) => !prev)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/8 bg-white/5 text-zinc-400 transition-colors hover:text-white sm:hidden"
+                          aria-label={isDetailsOpen ? 'Ocultar detalles del reproductor' : 'Mostrar detalles del reproductor'}
+                        >
+                          <svg className={`h-4 w-4 transition-transform ${isDetailsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] ${
+                        hasPlaybackError
+                          ? 'border-rose-500/20 bg-rose-500/10 text-rose-200'
+                          : isResolving || isBuffering
+                            ? 'border-amber-500/20 bg-amber-500/10 text-amber-100'
+                            : useNativeAudio
+                              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
+                              : 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200'
+                      }`}>
+                        {statusLabel}
+                      </span>
+                      <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] ${
+                        useNativeAudio
+                          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
+                          : 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200'
+                      }`}>
+                        {sourceLabel}
+                      </span>
+                      <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-400">
+                        {currentMix.style}
+                      </span>
+                      <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                        {currentMix.country}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 mb-1 sm:mb-1.5">
-                      <p className="text-zinc-500 text-[11px] sm:text-xs truncate flex-1">
-                        {currentMix.style} · {currentMix.country}
-                        <span className="hidden sm:inline"> · {currentMix.year} · {currentMix.bpm} BPM</span>
-                      </p>
-                      {currentMix.videoId && (
-                        <a
-                          href={`https://music.youtube.com/watch?v=${currentMix.videoId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] text-zinc-500 hover:text-emerald-400 transition-colors flex items-center gap-1 shrink-0"
-                          title="Escuchar en YouTube Music"
-                        >
-                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/>
-                          </svg>
-                          <span className="hidden sm:inline">YT Music</span>
-                        </a>
-                      )}
+
+                    <div className="mt-3 hidden items-center justify-between gap-4 rounded-2xl border border-white/6 bg-white/[0.03] px-3 py-2 sm:flex">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                          Siguiente en cola
+                        </p>
+                        <p className="mt-1 truncate text-[12px] text-zinc-300">
+                          {nextTrackLabel}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                          Estado
+                        </p>
+                        <p className="mt-1 text-[12px] text-zinc-300">
+                          {statusLabel}
+                        </p>
+                      </div>
                     </div>
                   </>
                 )}
-                {/* Progress bar inside controls */}
-                <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-400 mt-1">
-                  <span className="w-8 text-right tabular-nums hidden sm:inline">{formatTime(currentTime)}</span>
-                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden cursor-pointer shadow-inner" onClick={handleSeek}>
-                    <div className="h-full rounded-full transition-all duration-200"
-                      style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}dd, #14b8a6dd)` }} />
+
+                <div className="mt-3 flex items-center gap-2 text-[10px] font-mono text-zinc-400">
+                  <span className="hidden w-10 text-right tabular-nums sm:inline">{formatTime(currentTime)}</span>
+                  <div className="h-1.5 flex-1 cursor-pointer overflow-hidden rounded-full bg-white/10 shadow-inner" onClick={handleSeek}>
+                    <div
+                      className="h-full rounded-full transition-all duration-200"
+                      style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accentColor}dd, #14b8a6dd)` }}
+                    />
                   </div>
-                  <span className="w-8 tabular-nums hidden sm:inline">{formatTime(duration)}</span>
+                  <span className="hidden w-10 tabular-nums sm:inline">{formatTime(duration)}</span>
                   <span className="text-[9px] tabular-nums sm:hidden">{formatTime(currentTime)}</span>
                 </div>
+
+                <div className="mt-3 flex items-center justify-between gap-2 sm:hidden">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={onPrev}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/60 text-zinc-400 transition-all hover:bg-zinc-700/70 hover:text-white active:scale-95"
+                      aria-label="Pista anterior"
+                    >
+                      <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={onPlayPause}
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-zinc-900 shadow-xl shadow-white/10 transition-all hover:bg-zinc-100 active:scale-95"
+                      aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                    >
+                      {isPlaying ? (
+                        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                        </svg>
+                      ) : (
+                        <svg className="ml-[1px] h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={onNext}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/60 text-zinc-400 transition-all hover:bg-zinc-700/70 hover:text-white active:scale-95"
+                      aria-label="Siguiente pista"
+                    >
+                      <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <span className="text-[10px] font-semibold text-zinc-500">
+                    {currentMix?.bpm} BPM
+                  </span>
+                </div>
+
+                {isDetailsOpen && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 sm:hidden">
+                    <button
+                      onClick={onToggleShuffle}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${
+                        shuffle ? 'border-emerald-500/25 bg-emerald-500/12 text-emerald-200' : 'border-white/8 bg-white/5 text-zinc-400'
+                      }`}
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+                      </svg>
+                      Shuffle
+                    </button>
+
+                    {!useNativeAudio && videoId && (
+                      <button
+                        onClick={() => setShowVideo(true)}
+                        className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-300"
+                        type="button"
+                      >
+                        Ver video
+                      </button>
+                    )}
+
+                    {currentMix?.videoId && (
+                      <a
+                        href={`https://music.youtube.com/watch?v=${currentMix.videoId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-400"
+                        title="Escuchar en YouTube Music"
+                      >
+                        YT Music
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* === CONTROLS === */}
-              <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 md:ml-4 w-full sm:w-auto">
-                {/* Shuffle */}
+              <div className="hidden shrink-0 items-center gap-2 sm:flex lg:gap-2.5">
                 <button
                   onClick={onToggleShuffle}
-                  className={`w-8 h-8 rounded-full hidden sm:inline-flex items-center justify-center transition-all ${
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition-all lg:h-11 lg:w-11 ${
                     shuffle ? 'bg-emerald-500/15 text-emerald-400' : 'text-zinc-600 hover:text-zinc-300'
                   }`}
                   aria-label="Modo aleatorio"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
                   </svg>
                 </button>
 
-                {/* Prev */}
                 <button
                   onClick={onPrev}
-                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-400 hover:text-white inline-flex items-center justify-center transition-all active:scale-95"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800/60 text-zinc-400 transition-all hover:bg-zinc-700/70 hover:text-white active:scale-95 lg:h-11 lg:w-11"
                   aria-label="Pista anterior"
                 >
-                  <svg className="w-4 h-4 sm:w-[18px] sm:h-[18px]" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-[18px] w-[18px]" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
                   </svg>
                 </button>
 
-                {/* Play/Pause */}
                 <button
                   onClick={onPlayPause}
-                  className="w-12 h-12 sm:w-[52px] sm:h-[52px] rounded-full bg-white text-zinc-900 inline-flex items-center justify-center hover:bg-zinc-100 active:scale-95 transition-all shadow-xl shadow-white/10"
+                  className={`inline-flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-xl transition-all active:scale-95 lg:h-[58px] lg:w-[58px] ${
+                    isResolving || isBuffering
+                      ? 'bg-amber-300 text-zinc-950 shadow-amber-500/15'
+                      : 'bg-white text-zinc-900 shadow-white/10 hover:bg-zinc-100'
+                  }`}
                   aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
                 >
-                  {isPlaying ? (
-                    <svg className="w-5 h-5 sm:w-[22px] sm:h-[22px]" fill="currentColor" viewBox="0 0 24 24">
+                  {isResolving || isBuffering ? (
+                    <svg className="h-[20px] w-[20px] animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v3m0 10v3m8-8h-3M7 12H4m13.657-5.657l-2.121 2.121M8.464 15.536l-2.121 2.121m0-11.314l2.121 2.121m7.072 7.072l2.121 2.121" />
+                    </svg>
+                  ) : isPlaying ? (
+                    <svg className="h-[22px] w-[22px]" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                     </svg>
                   ) : (
-                    <svg className="w-5 h-5 sm:w-[22px] sm:h-[22px] ml-[2px]" fill="currentColor" viewBox="0 0 24 24">
+                    <svg className="ml-[2px] h-[22px] w-[22px]" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M8 5v14l11-7z" />
                     </svg>
                   )}
                 </button>
 
-                {/* Next */}
                 <button
                   onClick={onNext}
-                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-zinc-800/60 hover:bg-zinc-700/70 text-zinc-400 hover:text-white inline-flex items-center justify-center transition-all active:scale-95"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800/60 text-zinc-400 transition-all hover:bg-zinc-700/70 hover:text-white active:scale-95"
                   aria-label="Siguiente pista"
                 >
-                  <svg className="w-4 h-4 sm:w-[18px] sm:h-[18px]" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-[18px] w-[18px]" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
                   </svg>
                 </button>
 
-                {/* Volume — solo desktop */}
-                <div className="hidden sm:flex items-center gap-1.5">
+                {!useNativeAudio && videoId && (
+                  <button
+                    onClick={() => setShowVideo(true)}
+                    className="rounded-full border border-white/8 bg-white/5 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-300 transition-colors hover:bg-white/10"
+                    type="button"
+                  >
+                    Ver video
+                  </button>
+                )}
+
+                <div className="flex items-center gap-1.5 rounded-full border border-white/6 bg-white/[0.03] px-2 py-1.5">
                   <button
                     onClick={() => {
                       const newVol = volume === 0 ? 80 : 0;
@@ -705,24 +872,31 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
                       if (audioRef.current) audioRef.current.volume = newVol / 100;
                       playerRef.current?.setVolume?.(newVol);
                     }}
-                    className="w-9 h-9 rounded-full text-zinc-500 hover:text-zinc-300 inline-flex items-center justify-center transition-colors shrink-0"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-zinc-500 transition-colors hover:text-zinc-300"
                     aria-label="Volumen"
                   >
                     {volume === 0 ? (
-                      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                       </svg>
                     ) : (
-                      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                         {volume >= 50 && <path strokeLinecap="round" strokeLinejoin="round" d="M17.95 5.05a10 10 0 010 13.9" />}
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072" />
                       </svg>
                     )}
                   </button>
-                  <input type="range" min="0" max="100" value={volume} onChange={handleVolumeChange}
-                    aria-label="Volumen" className="w-20 h-1.5 rounded-full appearance-none bg-zinc-700 cursor-pointer accent-emerald-500" />
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={volume}
+                    onChange={handleVolumeChange}
+                    aria-label="Volumen"
+                    className="h-1.5 w-24 cursor-pointer appearance-none rounded-full bg-zinc-700 accent-emerald-500"
+                  />
                 </div>
               </div>
             </div>

@@ -7,15 +7,15 @@ interface EmptyStateProps {
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({ onGenerate, onOpenSettings, hasApiKey }) => (
-  <div className="text-center py-16 sm:py-24 rounded-2xl border border-dashed border-zinc-800/40 relative overflow-hidden">
+  <div className="relative overflow-hidden rounded-[28px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.12),transparent_36%),linear-gradient(180deg,rgba(24,24,27,0.92),rgba(9,9,11,0.96))] px-6 py-16 text-center sm:py-20">
     {/* Background glow */}
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-      <div className="w-64 h-64 rounded-full bg-indigo-500/5 blur-3xl" />
+      <div className="w-72 h-72 rounded-full bg-emerald-500/10 blur-3xl" />
     </div>
 
     <div className="relative">
-      <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-zinc-800/80 to-zinc-900/80 border border-zinc-700/30 flex items-center justify-center shadow-xl shadow-black/20">
-        <svg className="w-9 h-9 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-[24px] border border-emerald-500/20 bg-gradient-to-br from-emerald-400/20 to-cyan-400/10 shadow-xl shadow-emerald-500/10">
+        <svg className="w-9 h-9 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -25,25 +25,26 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ onGenerate, onOpenSettin
         </svg>
       </div>
 
-      <h3 className="text-zinc-300 text-lg font-semibold mb-2">Explora el mundo musical</h3>
-      <p className="text-zinc-600 text-sm mb-8 max-w-xs mx-auto leading-relaxed">
+      <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-zinc-500">Punto de partida</p>
+      <h3 className="mt-2 text-2xl font-black text-white">Explora el mundo musical</h3>
+      <p className="mx-auto mt-3 mb-8 max-w-md text-sm leading-relaxed text-zinc-400">
         {hasApiKey
-          ? 'Configura los filtros y genera descubrimientos musicales con inteligencia artificial.'
-          : 'Configura tu clave de Gemini para empezar a descubrir sonidos extraños de todo el planeta.'}
+          ? 'Escribe una intención sonora, combina región, época o BPM y deja que la IA construya una ruta de escucha más precisa.'
+          : 'Configura tu clave de Gemini para empezar a descubrir sonidos extraños de todo el planeta con recomendaciones guiadas.'}
       </p>
 
-      <div className="flex items-center justify-center gap-3">
+      <div className="flex flex-wrap items-center justify-center gap-3">
         {!hasApiKey && (
           <button
             onClick={onOpenSettings}
-            className="px-5 py-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 text-sm font-semibold transition-all border border-zinc-700/40 hover:border-zinc-600/60"
+            className="rounded-2xl border border-white/10 bg-zinc-900/80 px-5 py-3 text-sm font-semibold text-zinc-200 transition-all hover:bg-zinc-800"
           >
             Configurar claves
           </button>
         )}
         <button
           onClick={onGenerate}
-          className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30"
+          className="rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-400 px-6 py-3 text-sm font-black text-zinc-950 transition-all shadow-lg shadow-emerald-500/20 hover:from-emerald-300 hover:to-teal-300"
         >
           <span className="flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

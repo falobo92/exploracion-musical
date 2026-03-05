@@ -18,6 +18,14 @@ export interface MusicMix {
   jitterLng?: number;
 }
 
+export type PlaybackStatus =
+  | 'idle'
+  | 'resolving'
+  | 'buffering'
+  | 'playing'
+  | 'paused'
+  | 'error';
+
 export type ContinentKey =
   | 'África'
   | 'Africa'
@@ -29,7 +37,8 @@ export type ContinentKey =
   | 'América del Sur'
   | 'South America'
   | 'Oceanía'
-  | 'Oceania';
+  | 'Oceania'
+  | 'Desconocido';
 
 export interface SearchCriteria {
   continent: string;

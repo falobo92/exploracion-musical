@@ -87,7 +87,7 @@ export const SavedSearchesModal: React.FC<SavedSearchesModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[90] flex items-center justify-center p-4"
         >
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
           <motion.div
@@ -110,7 +110,7 @@ export const SavedSearchesModal: React.FC<SavedSearchesModalProps> = ({
               <p className="text-[11px] text-zinc-500">{savedSearches.length} búsqueda{savedSearches.length !== 1 ? 's' : ''} almacenada{savedSearches.length !== 1 ? 's' : ''}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-zinc-800/60 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors">
+          <button onClick={onClose} title="Cerrar búsquedas guardadas" aria-label="Cerrar búsquedas guardadas" className="w-8 h-8 rounded-lg bg-zinc-800/60 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>

@@ -154,7 +154,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, mixes
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6"
+          className="fixed inset-0 z-[90] flex items-center justify-center p-4 sm:p-6"
         >
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
           <motion.div
@@ -178,7 +178,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, mixes
                   <p className="text-xs text-zinc-400 font-medium">{mixes.length} canciones listas para descargar o copiar</p>
                 </div>
               </div>
-              <button onClick={onClose} className="absolute sm:relative top-4 sm:top-0 right-4 sm:right-0 w-8 h-8 rounded-lg bg-zinc-800/60 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors">
+              <button onClick={onClose} title="Cerrar exportación" aria-label="Cerrar exportación" className="absolute sm:relative top-4 sm:top-0 right-4 sm:right-0 w-8 h-8 rounded-lg bg-zinc-800/60 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>

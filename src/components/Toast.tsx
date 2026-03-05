@@ -38,7 +38,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-8 right-8 z-[200] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+    <div className="app-toast-viewport pointer-events-none flex flex-col gap-3">
       {toasts.map(toast => {
         const config = typeConfig[toast.type];
         return (
